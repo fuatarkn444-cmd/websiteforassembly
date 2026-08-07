@@ -4,6 +4,7 @@ import time
 import json
 import os
 import base64
+import plotly.express as px
 from datetime import datetime
 
 # --- SAYFA AYARLARI ---
@@ -15,9 +16,9 @@ DB_FILE = "db.json"
 def load_db():
     default_db = {
         "stations": {
-            "Montaj-1": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None},
-            "Montaj-2": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None},
-            "Montaj-3": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None}
+            "Montaj-1": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None, "break_reason": ""},
+            "Montaj-2": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None, "break_reason": ""},
+            "Montaj-3": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None, "break_reason": ""}
         },
         "performance": {
             "Montaj-1": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0},
@@ -36,7 +37,7 @@ def load_db():
     with open(DB_FILE, "r", encoding="utf-8") as f:
         db = json.load(f)
         
-    # Eski JSON dosyasındaki eksik anahtarları otomatik tamamla (KeyError Çözümü)
+    # Eski JSON dosyasındaki eksik anahtarları otomatik tamamla
     updated = False
     for main_key in default_db:
         if main_key not in db:
@@ -70,8 +71,6 @@ if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
-if 'show_break_modal' not in st.session_state:
-    st.session_state.show_break_modal = False
 
 # --- KULLANICI HESAPLARI ---
 USERS = {
@@ -127,16 +126,16 @@ else:
     
     with st.sidebar:
         st.markdown(f"<h2>👤 {aktif_rol}</h2>", unsafe_allow_html=True)
-        
         st.divider()
-        # Kullanıcının rolüne veya durumuna göre Oto-Yenileme anahtarı
+        
         if aktif_rol in ["Yönetici", "Kalite"]:
             canli_mod = st.checkbox("🟢 Canlı İzleme (Oto-Yenile)", value=True)
             if canli_mod:
-                st.info("💡 Form doldururken sayfanın yenilenmemesi için bu modu geçici kapatabilirsiniz.")
+                st.info("💡 İşlem yaparken sayfanın yenilenmemesi için bu modu geçici kapatabilirsiniz.")
         elif aktif_rol in ["Montaj-1", "Montaj-2", "Montaj-3"]:
-            if db["stations"][aktif_rol]["status"] == "Bekliyor":
-                canli_mod = st.checkbox("🟢 Yeni Görev Bekleniyor (Oto-Yenile)", value=True)
+            durum_kontrol = db["stations"][aktif_rol]["status"]
+            if durum_kontrol in ["Bekliyor", "Onay Bekliyor", "Tamamlandı"]:
+                canli_mod = st.checkbox("🟢 Sistem Takibi (Oto-Yenile)", value=True)
 
         if st.button("🚪 Çıkış Yap", use_container_width=True):
             logout()
@@ -147,6 +146,11 @@ else:
     if aktif_rol == "Yönetici":
         st.title("Yönetici Kontrol Paneli")
         
+        # Tamamlanan iş var mı kontrolü
+        tamamlanan_istasyonlar = [ist for ist, veri in db["stations"].items() if veri["status"] == "Tamamlandı"]
+        if tamamlanan_istasyonlar:
+            st.success(f"🎉 DİKKAT: **{', '.join(tamamlanan_istasyonlar)}** istasyon(lar)ı mevcut iş emrini tamamladı! Yeni iş emri bekliyorlar.")
+
         tab1, tab2, tab3 = st.tabs(["📊 Canlı İzleme & Performans", "🚀 İş Emri Gönder", "⚠️ Hata Kayıtları"])
         
         with tab1:
@@ -157,11 +161,19 @@ else:
                 with [c1, c2, c3][index]:
                     veri = db["stations"][istasyon]
                     st.markdown(f"<h2 style='text-align:center;'>{istasyon}</h2>", unsafe_allow_html=True)
+                    
                     if veri["status"] == "Bekliyor":
                         st.info("🟡 BOŞTA / BEKLİYOR")
+                    elif veri["status"] == "Onay Bekliyor":
+                        st.warning("🟠 PERSONEL ONAYI BEKLENİYOR")
+                    elif veri["status"] == "Tamamlandı":
+                        st.success("✅ İŞ BİTTİ (YENİ İŞ BEKLİYOR)")
                     else:
                         renk = "green" if veri["status"] == "Çalışıyor" else "red"
                         st.markdown(f"<h3 style='text-align:center; color:{renk};'>{veri['status'].upper()}</h3>", unsafe_allow_html=True)
+                        if veri["status"] == "Mola":
+                            st.write(f"*(Sebep: {veri.get('break_reason', 'Belirtilmedi')})*")
+                            
                         st.metric("Üretim", f"{veri['current_qty']} / {veri['target_qty']}")
                         st.write(f"**İş Emri:** {veri['id']}")
                         st.write(f"**Süre:** {format_time(get_live_work_time(istasyon))}")
@@ -180,16 +192,28 @@ else:
             grafik_col1, grafik_col2 = st.columns(2)
             
             with grafik_col1:
-                st.markdown("**İstasyon Bazlı Toplam Üretim (Adet)**")
-                uretim_verisi = {ist: db["performance"][ist]["toplam_uretilen_parca"] for ist in istasyonlar}
-                st.bar_chart(pd.DataFrame([uretim_verisi]).T)
+                # Plotly Üretim Grafiği
+                df_uretim = pd.DataFrame([
+                    {"İstasyon": ist, "Üretim (Adet)": db["performance"][ist]["toplam_uretilen_parca"]} 
+                    for ist in istasyonlar
+                ])
+                fig_uretim = px.bar(df_uretim, x="İstasyon", y="Üretim (Adet)", text="Üretim (Adet)", 
+                                    color="İstasyon", title="İstasyon Bazlı Toplam Üretim")
+                fig_uretim.update_traces(textposition='outside')
+                st.plotly_chart(fig_uretim, use_container_width=True)
                 
             with grafik_col2:
-                st.markdown("**Ortalama Kalite Onayı Bekleme Süresi (Saniye)**")
+                # Plotly Kalite Bekleme Grafiği
                 qc_df = pd.DataFrame(db["qc_logs"])
                 if not qc_df.empty:
-                    ortalama_qc = qc_df.groupby("İstasyon")["Bekleme_Suresi_Sn"].mean()
-                    st.bar_chart(ortalama_qc)
+                    ortalama_qc = qc_df.groupby("İstasyon", as_index=False)["Bekleme_Suresi_Sn"].mean()
+                    ortalama_qc["Bekleme_Suresi_Sn"] = ortalama_qc["Bekleme_Suresi_Sn"].round(1)
+                    
+                    fig_qc = px.bar(ortalama_qc, x="İstasyon", y="Bekleme_Suresi_Sn", text="Bekleme_Suresi_Sn",
+                                    color="İstasyon", title="Ortalama Kalite Onayı Bekleme Süresi (Saniye)",
+                                    color_discrete_sequence=px.colors.qualitative.Pastel)
+                    fig_qc.update_traces(textposition='outside')
+                    st.plotly_chart(fig_qc, use_container_width=True)
                 else:
                     st.info("Henüz kalite onayı ölçümü bulunmuyor.")
 
@@ -202,14 +226,14 @@ else:
                 sn_id = st.text_input("Ürün Seri Numarası (Başlangıç):", value="SN-123456")
                 hedef_sayi = st.number_input("Üretilecek Adet (Hedef):", min_value=1, value=50)
                 
-                if st.button("🚀 Üretime Başla", type="primary", use_container_width=True):
+                if st.button("🚀 İş Emrini Gönder (Onay Bekler)", type="primary", use_container_width=True):
                     db["stations"][hedef_istasyon] = {
-                        "status": "Çalışıyor", "id": wo_id, "sn": sn_id, "target_qty": hedef_sayi,
+                        "status": "Onay Bekliyor", "id": wo_id, "sn": sn_id, "target_qty": hedef_sayi,
                         "current_qty": 1, "step": 1, "work_time": 0.0, "break_time": 0.0,
-                        "last_work_start": time.time(), "last_break_start": None, "qc_req_time": None
+                        "last_work_start": None, "last_break_start": None, "qc_req_time": None, "break_reason": ""
                     }
                     save_db(db)
-                    st.success(f"İş emri {hedef_istasyon} istasyonuna gönderildi!")
+                    st.success(f"İş emri {hedef_istasyon} istasyonuna gönderildi. Personel kabul ettiğinde üretim başlayacak!")
                     st.rerun()
 
         with tab3:
@@ -264,9 +288,28 @@ else:
         durum = istasyon_verisi["status"]
         
         if durum == "Bekliyor":
-            st.markdown("<br><br><h1 style='text-align: center; color: #ffcc00; font-size: 50px;'>⏳ YENİ İŞ EMRİ BEKLENİYOR...</h1>", unsafe_allow_html=True)
+            st.markdown("<br><br><h1 style='text-align: center; color: #ffcc00; font-size: 50px;'>⏳ YÖNETİCİDEN İŞ EMRİ BEKLENİYOR...</h1>", unsafe_allow_html=True)
+        
+        elif durum == "Tamamlandı":
+            st.markdown("<br><br><h1 style='text-align: center; color: #00cc66; font-size: 50px;'>🎉 İŞ EMRİ TAMAMLANDI!</h1>", unsafe_allow_html=True)
+            st.markdown("<h3 style='text-align: center; color: #555;'>Yöneticiye bilgi verildi. Yeni iş emri ataması bekleniyor...</h3>", unsafe_allow_html=True)
+
+        elif durum == "Onay Bekliyor":
+            st.markdown(f"<div style='background-color: #ffe6cc; padding: 20px; border-radius: 10px; text-align: center; border: 2px solid #ff9900;'>"
+                        f"<h1 style='color: #ff9900; font-size: 40px;'>YENİ İŞ EMRİ GELDİ!</h1>"
+                        f"<h2>İş Emri: {istasyon_verisi['id']} | Ürün: {istasyon_verisi['sn']} | Hedef: {istasyon_verisi['target_qty']} Adet</h2>"
+                        f"</div><br>", unsafe_allow_html=True)
+            
+            col_b1, col_b2, col_b3 = st.columns([1,2,1])
+            with col_b2:
+                if st.button("✅ İŞİ KABUL ET VE ÜRETİME BAŞLA", type="primary", use_container_width=True):
+                    istasyon_verisi["status"] = "Çalışıyor"
+                    istasyon_verisi["last_work_start"] = time.time()
+                    save_db(db)
+                    st.rerun()
+                    
         else:
-            # İRİ VE BELİRGİN BAŞLIK
+            # Çalışıyor, Duraklatıldı, Mola modları
             st.markdown(f"<div style='background-color: #f0f2f6; padding: 10px; border-radius: 10px;'>"
                         f"<h1 style='text-align: center; color: #000; font-size: 45px;'>ÜRÜN: {istasyon_verisi['sn']}</h1>"
                         f"<h2 style='text-align: center; color: #555;'>Üretim No: {istasyon_verisi['current_qty']} / {istasyon_verisi['target_qty']}</h2>"
@@ -294,25 +337,30 @@ else:
                         st.rerun()
 
                 st.divider()
-                with st.expander("☕ MOLA İŞLEMLERİ", expanded=False):
-                    if durum != "Mola":
-                        if st.button("Molaya Çık", use_container_width=True):
-                            if istasyon_verisi["status"] == "Çalışıyor" and istasyon_verisi["last_work_start"]:
-                                istasyon_verisi["work_time"] += time.time() - istasyon_verisi["last_work_start"]
-                                istasyon_verisi["last_work_start"] = None
-                            istasyon_verisi["last_break_start"] = time.time()
-                            istasyon_verisi["status"] = "Mola"
-                            save_db(db)
-                            st.rerun()
-                    else:
-                        if st.button("Moladan Dön", use_container_width=True):
-                            if istasyon_verisi["last_break_start"]:
-                                istasyon_verisi["break_time"] += time.time() - istasyon_verisi["last_break_start"]
-                                istasyon_verisi["last_break_start"] = None
-                            istasyon_verisi["last_work_start"] = time.time()
-                            istasyon_verisi["status"] = "Çalışıyor"
-                            save_db(db)
-                            st.rerun()
+                st.markdown("### ☕ Duruş / Mola İşlemleri")
+                if durum != "Mola":
+                    mola_sebebi = st.selectbox("Duruş Sebebi Seçiniz:", ["Mola (Yemek)", "Mola (Çay)", "Depodan Parça Temini", "Kalite Kontrol Beklemesi", "Diğer"])
+                    if st.button("Duruşu Başlat", use_container_width=True):
+                        if istasyon_verisi["status"] == "Çalışıyor" and istasyon_verisi["last_work_start"]:
+                            istasyon_verisi["work_time"] += time.time() - istasyon_verisi["last_work_start"]
+                            istasyon_verisi["last_work_start"] = None
+                        istasyon_verisi["last_break_start"] = time.time()
+                        istasyon_verisi["break_reason"] = mola_sebebi
+                        istasyon_verisi["status"] = "Mola"
+                        save_db(db)
+                        st.rerun()
+                else:
+                    st.warning(f"Şu an **{istasyon_verisi['break_reason']}** sebebiyle duruştasınız.")
+                    if st.button("Duruşu Bitir", use_container_width=True, type="primary"):
+                        if istasyon_verisi["last_break_start"]:
+                            istasyon_verisi["break_time"] += time.time() - istasyon_verisi["last_break_start"]
+                            istasyon_verisi["last_break_start"] = None
+                        
+                        # Mola bitince hemen ÇALIŞIYOR olma, DURAKLATILDI ol. Kullanıcı hazır olunca İşe Devam Etsin.
+                        istasyon_verisi["status"] = "Duraklatıldı"
+                        istasyon_verisi["break_reason"] = ""
+                        save_db(db)
+                        st.rerun()
 
             with orta:
                 st.markdown("### 📋 MONTAJ ADIMLARI")
@@ -376,7 +424,9 @@ else:
                                 if istasyon_verisi["last_work_start"]:
                                     istasyon_verisi["work_time"] += time.time() - istasyon_verisi["last_work_start"]
                                     istasyon_verisi["last_work_start"] = None
-                                istasyon_verisi["status"] = "Bekliyor"
+                                
+                                # Hedef bittiyse durum TAMAMLANDI olur
+                                istasyon_verisi["status"] = "Tamamlandı"
                                 db["performance"][aktif_rol]["tamamlanan_is_emri"] += 1
                             save_db(db)
                             st.rerun()
@@ -415,7 +465,7 @@ else:
                         else:
                             st.error("Bölge ve açıklama giriniz.")
                             
-    # --- CANLI OTO-YENİLEME DÖNGÜSÜ (Bütün Roller İçin) ---
+    # --- CANLI OTO-YENİLEME DÖNGÜSÜ ---
     if canli_mod:
         time.sleep(3)
         st.rerun()
