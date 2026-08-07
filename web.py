@@ -1,157 +1,224 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
-# Sayfa genel ayarı
+# --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Dijital Sis Arayüzü", layout="wide")
 
-# Sol Menü - Navigasyon
-st.sidebar.title("DİJİTAL SİS")
-sayfa = st.sidebar.radio("Görünüm Seçin:", ["1. Başlangıç (QR & İstasyon)", "2. Operatör Ekranı", "3. Yönetici Ekranı"])
+# --- VERİ TABANI & OTURUM YÖNETİMİ (SESSION STATE) ---
+# Gerçek bir veritabanı yerine geçici olarak session_state kullanıyoruz.
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.role = ""
 
-# ---------------------------------------------------------
-# 1. BAŞLANGIÇ EKRANI (İş Emri ve İstasyon Seçimi)
-# ---------------------------------------------------------
-if sayfa == "1. Başlangıç (QR & İstasyon)":
-    st.title("Yeni Görev Başlat")
+if 'work_order' not in st.session_state:
+    # İş emri durumları: "Bekliyor", "Aktif", "Durduruldu"
+    st.session_state.work_order = {"status": "Bekliyor", "id": "", "sn": ""}
+    st.session_state.current_step = 1
+    st.session_state.errors = []
+
+# Kullanıcı Hesapları (3 Operatör, 1 Kalite, 1 Yönetici)
+USERS = {
+    "operatör1": {"pass": "1234", "role": "Operatör"},
+    "operatör2": {"pass": "1234", "role": "Operatör"},
+    "operatör3": {"pass": "1234", "role": "Operatör"},
+    "kalite1": {"pass": "kalite123", "role": "Kalite"},
+    "admin": {"pass": "admin123", "role": "Yönetici"}
+}
+
+# --- YARDIMCI FONKSİYONLAR ---
+def login(username, password):
+    if username in USERS and USERS[username]["pass"] == password:
+        st.session_state.logged_in = True
+        st.session_state.username = username
+        st.session_state.role = USERS[username]["role"]
+        st.rerun()
+    else:
+        st.error("Kullanıcı adı veya şifre hatalı!")
+
+def logout():
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.role = ""
+    st.rerun()
+
+def next_step():
+    st.session_state.current_step += 1
+    st.rerun()
+
+# --- GİRİŞ EKRANI ---
+if not st.session_state.logged_in:
+    st.title("DİJİTAL SİS - Giriş")
     
-    st.info("İşe başlamak için iş emrini okutun ve istasyonu seçin.")
-    st.text_input("📷 İş Emri QR Kodunu Okutun (veya manuel girin):", placeholder="Örn: WO-2024-100")
-    st.selectbox("İstasyon Seçin:", ["Montaj 1", "Montaj 2", "Kalite Kontrol", "Test ve Paketleme"])
-    
-    st.button("İşe Başla (Operatör Ekranına Geç)", type="primary")
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        with st.form("login_form"):
+            st.subheader("Sisteme Giriş Yapın")
+            user_input = st.text_input("Kullanıcı Adı")
+            pass_input = st.text_input("Şifre", type="password")
+            submit_btn = st.form_submit_button("Giriş", use_container_width=True)
+            
+            if submit_btn:
+                login(user_input, pass_input)
+                
+        st.info("**Test Hesapları:**\n- Operatör: operatör1 / 1234\n- Kalite: kalite1 / kalite123\n- Yönetici: admin / admin123")
 
-# ---------------------------------------------------------
-# 2. OPERATÖR EKRANI
-# ---------------------------------------------------------
-elif sayfa == "2. Operatör Ekranı":
-    st.title("İstasyon: Montaj 1 | Personel: A")
-    
-    # Ekranı 3 ana sütuna bölüyoruz
-    sol, orta, sag = st.columns([1.5, 2.5, 1.5])
+# --- SİSTEM UYGULAMASI (Giriş Yapıldıktan Sonra) ---
+else:
+    # Sol Menü (Çıkış İşlemi)
+    with st.sidebar:
+        st.write(f"👤 **Aktif Kullanıcı:** {st.session_state.username}")
+        st.write(f"🏷️ **Rol:** {st.session_state.role}")
+        if st.button("Çıkış Yap", use_container_width=True):
+            logout()
 
-    # SOL KOLON: Durum ve Hızlı Kontrol
-    with sol:
-        st.subheader("Mevcut Görev")
-        st.info("**İşlenecek Ürün:** SN-123456\n\n**İş Emri:** WO-2024-100")
+    # ---------------------------------------------------------
+    # YÖNETİCİ EKRANI
+    # ---------------------------------------------------------
+    if st.session_state.role == "Yönetici":
+        st.title("Yönetici Kontrol Paneli")
         
-        st.write("**Kontrol**")
-        st.button("🟢 Devam Et", use_container_width=True)
-        st.button("🔴 Dur", use_container_width=True)
-        st.button("🔵 Bitir", use_container_width=True)
-
-    # ORTA KOLON: Montaj Adımları (Tik ve Çarpı butonlu)
-    with orta:
-        st.subheader("Montaj Adımları")
+        st.subheader("İş Emri Yönetimi")
+        col_is_1, col_is_2 = st.columns(2)
         
-        # Adım 1
-        a1_c1, a1_c2, a1_c3 = st.columns([3, 1, 1])
-        a1_c1.write("🛠️ **Adım 1:** Vida Sıkma (2.5 Nm)")
-        a1_c2.button("✅", key="a1_ok", help="Uygulandı")
-        a1_c3.button("❌", key="a1_no", help="Uygulanamadı / Hata")
-
-        # Adım 2 ve O Adıma Özel Hata Bildirimi
-        a2_c1, a2_c2, a2_c3 = st.columns([3, 1, 1])
-        a2_c1.write("🔌 **Adım 2:** Kablo Bağlantısı")
-        a2_c2.button("✅", key="a2_ok")
-        a2_c3.button("❌", key="a2_no")
-        
-        # Direkt o adım seçilerek hata ekleme kısmı (Yönetici nerede hata olduğunu bilecek)
-        with st.expander("📸 Adım 2 İçin Hata Bildir"):
-            st.camera_input("Hata Görseli Çek")
-            st.text_area("Hatanın Yazılı Açıklaması:")
-            st.button("Adım 2 Hata Kaydını Yöneticye Gönder")
-
-        # Adım 3 - Zorunlu Kalite Kontrolü (Kırmızı Uyarı)
-        st.error("🔍 **Adım 3: Zorunlu Kalite Kontrolü**\n\nKALİTE BİRİMİNDEN ONAY BEKLENİYOR - İLERLEME KİLİTLİ")
-        
-        # Adım 4 (Kalite onayı gelmediği için pasif durumda)
-        a4_c1, a4_c2, a4_c3 = st.columns([3, 1, 1])
-        a4_c1.write("⚙️ **Adım 4:** Son Montaj (Şu an kilitli)")
-        a4_c2.button("✅", key="a4_ok", disabled=True)
-        a4_c3.button("❌", key="a4_no", disabled=True)
-
+        with col_is_1:
+            st.write("**Yeni İş Emri Gönder**")
+            wo_id = st.text_input("İş Emri Numarası:", value="WO-2024-100")
+            sn_id = st.text_input("Ürün Seri Numarası:", value="SN-123456")
+            
+            if st.button("Üretime Başla (İş Emrini Gönder)", type="primary"):
+                st.session_state.work_order = {"status": "Aktif", "id": wo_id, "sn": sn_id}
+                st.session_state.current_step = 1 # Süreci sıfırla
+                st.success("İş emri operatör ekranına gönderildi!")
+                st.rerun()
+                
+        with col_is_2:
+            st.write("**Mevcut İş Emri Durumu:**")
+            if st.session_state.work_order["status"] == "Aktif":
+                st.success(f"Aktif İş Emri: {st.session_state.work_order['id']} (SN: {st.session_state.work_order['sn']})")
+                
+                # Acil Durdurma Butonu
+                if st.button("🚨 ACİL DURDUR (İş Emrini İptal Et)", type="primary"):
+                    st.session_state.work_order["status"] = "Durduruldu"
+                    st.rerun()
+            elif st.session_state.work_order["status"] == "Durduruldu":
+                st.error("Üretim ACİL DURDURULDU!")
+            else:
+                st.info("Şu an üretimde iş emri yok.")
+                
         st.divider()
-        # Sonraki istasyon için mesaj
-        st.text_input("Bir Sonraki Montaj Aşaması İçin Mesaj Bırakın:", placeholder="Örn: Gelecek istasyonda torkuna dikkat edilsin...")
+        st.subheader("Bildirilen Hatalar")
+        if len(st.session_state.errors) > 0:
+            err_df = pd.DataFrame(st.session_state.errors)
+            st.dataframe(err_df, use_container_width=True)
+        else:
+            st.write("Şu an için kayıtlı hata bulunmamaktadır.")
 
-    # SAĞ KOLON: Duruşlar ve Tomcad
-    with sag:
-        st.subheader("Duruş Al")
-        st.button("☕ Mola Al", use_container_width=True)
-        st.button("📦 Depodan Parça Temini", use_container_width=True)
-        st.button("🔧 Makine Arızası", use_container_width=True)
-        st.button("🚑 İş Kazası Bildirimi", use_container_width=True)
+    # ---------------------------------------------------------
+    # OPERATÖR EKRANI
+    # ---------------------------------------------------------
+    elif st.session_state.role == "Operatör":
+        st.title("İstasyon: Montaj 1")
         
-        st.divider()
-        st.subheader("Uygulamalar")
-        st.button("📐 Tomcad CAD - Aç / Görüntüle", use_container_width=True)
-
-    # ALT KISIM: Yöneticiye Acil Mesaj (El altında değil, en altta)
-    st.divider()
-    st.write("**İletişim**")
-    with st.expander("✉️ Yöneticiye Anlık Bildirim Mesajı Gönder"):
-        st.text_area("Yöneticinin ekranına düşecek mesaj:")
-        st.button("Mesajı İlet")
-
-# ---------------------------------------------------------
-# 3. YÖNETİCİ EKRANI (Detaylı Takip ve Analiz)
-# ---------------------------------------------------------
-elif sayfa == "3. Yönetici Ekranı":
-    st.title("Yönetici Dashboard - Canlı Takip")
-    
-    # 1. BÖLÜM: Üst KPI Kartları
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Günlük Üretim Adedi", "450 / 600")
-    k2.metric("Günlük Verim", "%75")
-    k3.metric("Personel Verimi (Ort.)", "%82")
-    k4.metric("Personel Hata Geçmişi (Toplam)", "7 Hata")
-
-    st.divider()
-
-    # 2. BÖLÜM: Canlı Takip ve Duruş Analizi
-    col_canli, col_durus = st.columns(2)
-    
-    with col_canli:
-        st.subheader("📍 Hangi İstasyonda Çalışma Var? (Canlı)")
-        st.success("**Montaj 1:** Çalışıyor (Personel A) - SN: 123456")
-        st.warning("**Montaj 2:** Malzeme Bekliyor (Depo Onayı)")
-        st.error("**Kalite İstasyonu:** Teknik Destek Bekliyor / Sistem Arızası")
+        # Yönetici iş emri göndermediyse operatör işlem yapamaz
+        if st.session_state.work_order["status"] == "Bekliyor":
+            st.warning("⏳ Yöneticiden iş emri bekleniyor... Lütfen bekleyiniz.")
         
-        st.subheader("⚠️ Acil Bilgilendirme (Kırmızı Bayrak)")
-        st.error("Montaj 1'den Acil Mesaj: Tork anahtarı kalibrasyonu bozuldu!")
+        elif st.session_state.work_order["status"] == "Durduruldu":
+            st.error("🚨 BU İŞ EMRİ YÖNETİCİ TARAFINDAN ACİL OLARAK DURDURULMUŞTUR! LÜTFEN İŞLEM YAPMAYIN.")
+            
+        elif st.session_state.work_order["status"] == "Aktif":
+            
+            sol, orta, sag = st.columns([1, 2, 1])
 
-    with col_durus:
-        st.subheader("⏱️ Toplam Duruş Süresi ve Nedenleri")
-        # Basit bir bar grafiği
-        durus_veri = pd.DataFrame({
-            'Neden': ['Malzeme Bekleme', 'Kalite Bekleme', 'Teknik Destek', 'Mola'],
-            'Süre (Dakika)': [45, 30, 15, 20]
-        }).set_index('Neden')
-        st.bar_chart(durus_veri)
+            # SOL KOLON
+            with sol:
+                st.subheader("Mevcut Görev")
+                st.info(f"**İşlenecek Ürün:** {st.session_state.work_order['sn']}\n\n**İş Emri:** {st.session_state.work_order['id']}")
+                st.button("Mola Al", use_container_width=True)
+                st.button("Parça Temini", use_container_width=True)
 
-    st.divider()
+            # ORTA KOLON (Sıralı Adımlar)
+            with orta:
+                st.subheader("Montaj Adımları")
+                step = st.session_state.current_step
+                
+                # ADIM 1
+                ad1_checked = (step > 1)
+                ad1 = st.checkbox("Adım 1: Vida Sıkma (2.5 Nm)", value=ad1_checked, disabled=(step != 1))
+                if ad1 and step == 1:
+                    next_step()
+                    
+                # ADIM 2
+                ad2_checked = (step > 2)
+                ad2 = st.checkbox("Adım 2: Kablo Bağlantısı", value=ad2_checked, disabled=(step != 2))
+                if ad2 and step == 2:
+                    next_step()
+                    
+                # ADIM 3 (KALİTE ONAYI - ŞİFRELİ)
+                ad3_checked = (step > 3)
+                if step == 3:
+                    st.error("🔍 Adım 3: Zorunlu Kalite Kontrolü")
+                    st.write("Devam etmek için kalite yetkilisinin şifresini girmesi gerekmektedir.")
+                    qc_pass = st.text_input("Kalite Yetkilisi Şifresi:", type="password")
+                    if st.button("Kalite Onayını Ver"):
+                        # Kalite şifresini veritabanından(sözlükten) kontrol et
+                        if qc_pass == USERS["kalite1"]["pass"]:
+                            st.success("Kalite onayı alındı!")
+                            next_step()
+                        else:
+                            st.error("Hatalı kalite şifresi!")
+                elif step > 3:
+                    st.checkbox("Adım 3: Zorunlu Kalite Kontrolü", value=True, disabled=True)
+                else:
+                    st.checkbox("Adım 3: Zorunlu Kalite Kontrolü (Kilitli)", value=False, disabled=True)
+                    
+                # ADIM 4
+                ad4_checked = (step > 4)
+                ad4 = st.checkbox("Adım 4: Son Montaj", value=ad4_checked, disabled=(step != 4))
+                if ad4 and step == 4:
+                    st.success("Tüm adımlar tamamlandı!")
+                    st.session_state.current_step = 5 # Bitirme konumu
+                    
+                if step == 5:
+                    if st.button("İşi Bitir ve Yeni İşe Geç", type="primary", use_container_width=True):
+                        st.session_state.work_order["status"] = "Bekliyor"
+                        st.session_state.current_step = 1
+                        st.rerun()
 
-    # 3. BÖLÜM: İzlenebilirlik (Montaj Geçmişi ve Operasyon Zamanları)
-    st.subheader("🔍 İzlenebilirlik ve Üretim Geçmişi")
-    st.text_input("Seri Numarası ile Geçmiş Ara:", placeholder="Örn: SN-123456")
-    
-    # Operasyon başlangıç/bitiş, personel geçmişi ve adıma özel hata tablosu
-    tablo_gecmis = pd.DataFrame({
-        "İşlem Zamanı": ["08:00 - 08:15", "08:15 - 08:20", "08:20 - Bekliyor"],
-        "Operatör": ["Personel A", "Personel A", "Kalite Uzmanı"],
-        "İstasyon": ["Montaj 1", "Montaj 1", "Montaj 1"],
-        "Adım": ["Adım 1: Vida Sıkma", "Adım 2: Kablo Bağlantısı", "Adım 3: Kalite Kontrol"],
-        "Durum": ["Başarılı (✅)", "Hatalı (❌)", "Onay Bekliyor"],
-        "Yazılı & Görsel Hata Detayı": ["-", "Görsel Var: Kablo ucu koptu.", "-"]
-    })
-    st.dataframe(tablo_gecmis, use_container_width=True)
+            # SAĞ KOLON (Hata Belirt)
+            with sag:
+                st.subheader("İstasyon Bildirimleri")
+                
+                with st.expander("⚠️ HATA BELİRT", expanded=False):
+                    hata_aciklama = st.text_area("Hatanın Tanımı:")
+                    
+                    # Hata Bölgesi Seçimi
+                    st.write("**Hata Parçanın Neresinde?**")
+                    hata_bolgesi = st.radio("Bölge Seçiniz:", ["Seçilmedi", "Ön Yüzey", "Arka Yüzey", "Sağ Kenar", "Sol Kenar", "İç Kısım"])
+                    
+                    if st.button("Hatayı Yöneticiye Gönder"):
+                        if hata_bolgesi != "Seçilmedi" and hata_aciklama != "":
+                            yeni_hata = {
+                                "Zaman": datetime.now().strftime("%H:%M:%S"),
+                                "Personel": st.session_state.username,
+                                "Bölge": hata_bolgesi,
+                                "Açıklama": hata_aciklama
+                            }
+                            st.session_state.errors.append(yeni_hata)
+                            st.success("Hata başarıyla yöneticiye iletildi!")
+                        else:
+                            st.error("Lütfen hata bölgesini seçin ve açıklama yazın.")
 
-    # 4. BÖLÜM: Test ve Ölçüm Sonuçları
-    st.subheader("📊 Test ve Anlık Ölçüm Sonuçları Kaydı")
-    test_veri = pd.DataFrame({
-        "Seri No": ["SN-123454", "SN-123455"],
-        "Tork Değeri (Montaj 1)": ["2.4 Nm", "2.5 Nm"],
-        "Elektrik Testi": ["Geçti", "Kaldı (Kısa Devre)"],
-        "Son Karar": ["ONAY", "RED (Yeniden İşlem)"]
-    })
-    st.dataframe(test_veri, use_container_width=True)
+    # ---------------------------------------------------------
+    # KALİTE EKRANI (İsteğe Bağlı Görüntüleme İçin)
+    # ---------------------------------------------------------
+    elif st.session_state.role == "Kalite":
+        st.title("Kalite Kontrol Paneli")
+        st.info("Bu terminal sadece istasyonlardaki genel hataları görmek içindir. Adım onayları operatörlerin ekranlarından 'kalite123' şifresi girilerek yapılmalıdır.")
+        st.write("**Son Hata Kayıtları:**")
+        if len(st.session_state.errors) > 0:
+            st.dataframe(pd.DataFrame(st.session_state.errors), use_container_width=True)
+        else:
+            st.write("Sistemde aktif hata kaydı yok.")
