@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import time
 import json
@@ -10,44 +9,55 @@ from datetime import datetime
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Dijital Sis Arayüzü", layout="wide")
 
-# --- OTOMATİK YENİLEME FONKSİYONU ---
-def auto_refresh(seconds=10):
-    # Sayfayı belirtilen saniyede bir yeniler (Arkaplanda JS ile çalışır)
-    components.html(
-        f"""
-        <script>
-            setTimeout(function() {{
-                window.parent.location.reload();
-            }}, {seconds * 1000});
-        </script>
-        """,
-        height=0
-    )
-
 # --- VERİTABANI YÖNETİMİ (JSON) ---
 DB_FILE = "db.json"
 
 def load_db():
+    default_db = {
+        "stations": {
+            "Montaj-1": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None},
+            "Montaj-2": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None},
+            "Montaj-3": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None}
+        },
+        "performance": {
+            "Montaj-1": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0},
+            "Montaj-2": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0},
+            "Montaj-3": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0}
+        },
+        "qc_logs": [], 
+        "errors": []
+    }
+    
     if not os.path.exists(DB_FILE):
-        default_db = {
-            "stations": {
-                "Montaj-1": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None},
-                "Montaj-2": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None},
-                "Montaj-3": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None}
-            },
-            "performance": {
-                "Montaj-1": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0},
-                "Montaj-2": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0},
-                "Montaj-3": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0}
-            },
-            "qc_logs": [], # Kalite bekleme sürelerini (saniye) tutar
-            "errors": []
-        }
         with open(DB_FILE, "w", encoding="utf-8") as f:
             json.dump(default_db, f, indent=4)
-            
+        return default_db
+        
     with open(DB_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        db = json.load(f)
+        
+    # Eski JSON dosyasındaki eksik anahtarları otomatik tamamla (KeyError Çözümü)
+    updated = False
+    for main_key in default_db:
+        if main_key not in db:
+            db[main_key] = default_db[main_key]
+            updated = True
+            
+    for st_key in default_db["stations"]:
+        if st_key not in db["stations"]:
+            db["stations"][st_key] = default_db["stations"][st_key]
+            updated = True
+        else:
+            for sub_key in default_db["stations"][st_key]:
+                if sub_key not in db["stations"][st_key]:
+                    db["stations"][st_key][sub_key] = default_db["stations"][st_key][sub_key]
+                    updated = True
+                    
+    if updated:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(db, f, indent=4)
+            
+    return db
 
 def save_db(data):
     with open(DB_FILE, "w", encoding="utf-8") as f:
@@ -113,9 +123,21 @@ if not st.session_state.logged_in:
 # --- SİSTEM UYGULAMASI ---
 else:
     aktif_rol = st.session_state.role
+    canli_mod = False
     
     with st.sidebar:
         st.markdown(f"<h2>👤 {aktif_rol}</h2>", unsafe_allow_html=True)
+        
+        st.divider()
+        # Kullanıcının rolüne veya durumuna göre Oto-Yenileme anahtarı
+        if aktif_rol in ["Yönetici", "Kalite"]:
+            canli_mod = st.checkbox("🟢 Canlı İzleme (Oto-Yenile)", value=True)
+            if canli_mod:
+                st.info("💡 Form doldururken sayfanın yenilenmemesi için bu modu geçici kapatabilirsiniz.")
+        elif aktif_rol in ["Montaj-1", "Montaj-2", "Montaj-3"]:
+            if db["stations"][aktif_rol]["status"] == "Bekliyor":
+                canli_mod = st.checkbox("🟢 Yeni Görev Bekleniyor (Oto-Yenile)", value=True)
+
         if st.button("🚪 Çıkış Yap", use_container_width=True):
             logout()
 
@@ -123,7 +145,6 @@ else:
     # YÖNETİCİ EKRANI
     # ---------------------------------------------------------
     if aktif_rol == "Yönetici":
-        auto_refresh(10) # Yönetici ekranı sürekli yenilenir
         st.title("Yönetici Kontrol Paneli")
         
         tab1, tab2, tab3 = st.tabs(["📊 Canlı İzleme & Performans", "🚀 İş Emri Gönder", "⚠️ Hata Kayıtları"])
@@ -132,7 +153,6 @@ else:
             c1, c2, c3 = st.columns(3)
             istasyonlar = ["Montaj-1", "Montaj-2", "Montaj-3"]
             
-            # Canlı Durum Kartları
             for index, istasyon in enumerate(istasyonlar):
                 with [c1, c2, c3][index]:
                     veri = db["stations"][istasyon]
@@ -159,18 +179,15 @@ else:
             
             grafik_col1, grafik_col2 = st.columns(2)
             
-            # Üretim Grafiği
             with grafik_col1:
                 st.markdown("**İstasyon Bazlı Toplam Üretim (Adet)**")
                 uretim_verisi = {ist: db["performance"][ist]["toplam_uretilen_parca"] for ist in istasyonlar}
                 st.bar_chart(pd.DataFrame([uretim_verisi]).T)
                 
-            # Kalite Bekleme Grafiği
             with grafik_col2:
                 st.markdown("**Ortalama Kalite Onayı Bekleme Süresi (Saniye)**")
                 qc_df = pd.DataFrame(db["qc_logs"])
                 if not qc_df.empty:
-                    # İstasyonlara göre ortalama süreyi hesapla
                     ortalama_qc = qc_df.groupby("İstasyon")["Bekleme_Suresi_Sn"].mean()
                     st.bar_chart(ortalama_qc)
                 else:
@@ -217,7 +234,6 @@ else:
     # KALİTE EKRANI
     # ---------------------------------------------------------
     elif aktif_rol == "Kalite":
-        auto_refresh(10) # Kalite ekranı sürekli yenilenir
         st.title("🔍 Kalite Kontrol Merkezi")
         
         bekleyenler = [s for s, v in db["stations"].items() if v["step"] == 3 and v["status"] == "Çalışıyor"]
@@ -235,6 +251,8 @@ else:
             for hata in reversed(db["errors"]):
                 with st.expander(f"⚠️ {hata['Tarih/Saat']} - {hata['İstasyon']}"):
                     st.write(f"**Bölge:** {hata['Bölge']} | **Açıklama:** {hata['Açıklama']}")
+                    if hata['Onceden_Hatali']: 
+                        st.error("🚨 Parça önceden hatalı.")
                     if hata.get("Foto_Base64"):
                         st.image(base64.b64decode(hata["Foto_Base64"]), width=300)
 
@@ -245,9 +263,7 @@ else:
         istasyon_verisi = db["stations"][aktif_rol]
         durum = istasyon_verisi["status"]
         
-        # Bekleme durumunda form kaybı olmaması için sadece o zaman yenile
         if durum == "Bekliyor":
-            auto_refresh(10)
             st.markdown("<br><br><h1 style='text-align: center; color: #ffcc00; font-size: 50px;'>⏳ YENİ İŞ EMRİ BEKLENİYOR...</h1>", unsafe_allow_html=True)
         else:
             # İRİ VE BELİRGİN BAŞLIK
@@ -260,6 +276,7 @@ else:
 
             with sol:
                 st.info(f"**İş Emri:** {istasyon_verisi['id']}")
+                st.info(f"⏱️ **Çalışma:** {format_time(get_live_work_time(aktif_rol))}")
                 
                 if durum == "Duraklatıldı":
                     if st.button("▶️ İŞE DEVAM ET", use_container_width=True, type="primary"):
@@ -299,8 +316,6 @@ else:
 
             with orta:
                 st.markdown("### 📋 MONTAJ ADIMLARI")
-                
-                # Örnek Montaj Görseli Eklemesi
                 st.image("https://dummyimage.com/600x150/e0e0e0/000000.png&text=Yonetici+Tarafindan+Yuklenen+Montaj+Gorseli", use_container_width=True)
 
                 if durum == "Çalışıyor":
@@ -315,7 +330,6 @@ else:
                     st.markdown("---")
                     if st.checkbox("✅ Adım 2: Kablo Bağlantısı", value=(step > 2), disabled=(step != 2)) and step == 2:
                         istasyon_verisi["step"] = 3
-                        # Kalite onayı istendiği an süreyi başlat
                         istasyon_verisi["qc_req_time"] = time.time()
                         save_db(db)
                         st.rerun()
@@ -326,7 +340,6 @@ else:
                         qc_pass = st.text_input("Kalite Şifresi:", type="password")
                         if st.button("KALİTE ONAYI VER"):
                             if qc_pass == USERS["kalite1"]["pass"]:
-                                # Kalite bekleme süresini hesapla ve kaydet
                                 if istasyon_verisi.get("qc_req_time"):
                                     gecen_sure = int(time.time() - istasyon_verisi["qc_req_time"])
                                     db["qc_logs"].append({
@@ -401,3 +414,8 @@ else:
                             st.success("İletildi!")
                         else:
                             st.error("Bölge ve açıklama giriniz.")
+                            
+    # --- CANLI OTO-YENİLEME DÖNGÜSÜ (Bütün Roller İçin) ---
+    if canli_mod:
+        time.sleep(3)
+        st.rerun()
