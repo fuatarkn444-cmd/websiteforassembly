@@ -10,22 +10,37 @@ from datetime import datetime
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Dijital Sis Arayüzü", layout="wide")
 
-# --- VERİTABANI YÖNETİMİ (JSON DOSYASI) ---
+# --- OTOMATİK YENİLEME FONKSİYONU ---
+def auto_refresh(seconds=10):
+    # Sayfayı belirtilen saniyede bir yeniler (Arkaplanda JS ile çalışır)
+    components.html(
+        f"""
+        <script>
+            setTimeout(function() {{
+                window.parent.location.reload();
+            }}, {seconds * 1000});
+        </script>
+        """,
+        height=0
+    )
+
+# --- VERİTABANI YÖNETİMİ (JSON) ---
 DB_FILE = "db.json"
 
 def load_db():
     if not os.path.exists(DB_FILE):
         default_db = {
             "stations": {
-                "Montaj-1": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None},
-                "Montaj-2": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None},
-                "Montaj-3": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None}
+                "Montaj-1": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None},
+                "Montaj-2": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None},
+                "Montaj-3": {"status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, "work_time": 0.0, "break_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None}
             },
             "performance": {
                 "Montaj-1": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0},
                 "Montaj-2": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0},
                 "Montaj-3": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0}
             },
+            "qc_logs": [], # Kalite bekleme sürelerini (saniye) tutar
             "errors": []
         }
         with open(DB_FILE, "w", encoding="utf-8") as f:
@@ -83,56 +98,16 @@ def get_live_work_time(istasyon):
         t += time.time() - db["stations"][istasyon]["last_work_start"]
     return t
 
-def get_live_break_time(istasyon):
-    t = db["stations"][istasyon]["break_time"]
-    if db["stations"][istasyon]["status"] == "Mola" and db["stations"][istasyon]["last_break_start"]:
-        t += time.time() - db["stations"][istasyon]["last_break_start"]
-    return t
-
-# --- CANLI SAYAÇ HTML/JS ---
-def render_live_timer(label, seconds, is_active):
-    color = "#28a745" if is_active else "#6c757d"
-    status_text = "(Aktif)" if is_active else "(Durdu)"
-    
-    html_code = f"""
-    <div style="font-family: sans-serif; background-color: #f8f9fa; padding: 10px; border-radius: 5px; border-left: 5px solid {color}; margin-bottom: 10px;">
-        <span style="font-size: 14px; color: #555;">{label} {status_text}</span><br>
-        <span id="timer_{label.replace(' ','')}" style="font-size: 20px; font-weight: bold; color: {color};"></span>
-    </div>
-    <script>
-    let secs_{label.replace(' ','')} = {int(seconds)};
-    let isActive = {'true' if is_active else 'false'};
-    
-    function formatTime(s) {{
-        let h = Math.floor(s / 3600).toString().padStart(2, '0');
-        let m = Math.floor((s % 3600) / 60).toString().padStart(2, '0');
-        let sec = Math.floor(s % 60).toString().padStart(2, '0');
-        return h + ':' + m + ':' + sec;
-    }}
-    
-    document.getElementById('timer_{label.replace(' ','')}').innerText = formatTime(secs_{label.replace(' ','')});
-    
-    if (isActive) {{
-        setInterval(function() {{
-            secs_{label.replace(' ','')}++;
-            document.getElementById('timer_{label.replace(' ','')}').innerText = formatTime(secs_{label.replace(' ','')});
-        }}, 1000);
-    }}
-    </script>
-    """
-    components.html(html_code, height=80)
-
 # --- GİRİŞ EKRANI ---
 if not st.session_state.logged_in:
-    st.title("DİJİTAL SİS - Giriş")
+    st.markdown("<h1 style='text-align: center; font-size: 50px; color: #333;'>DİJİTAL SİS</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         with st.form("login_form"):
             st.subheader("Sisteme Giriş Yapın")
             user_input = st.text_input("Kullanıcı Adı")
             pass_input = st.text_input("Şifre", type="password")
-            submit_btn = st.form_submit_button("Giriş", use_container_width=True)
-            if submit_btn:
+            if st.form_submit_button("GİRİŞ YAP", use_container_width=True):
                 login(user_input, pass_input)
 
 # --- SİSTEM UYGULAMASI ---
@@ -140,19 +115,7 @@ else:
     aktif_rol = st.session_state.role
     
     with st.sidebar:
-        st.write(f"👤 **Hesap:** {st.session_state.username}")
-        st.write(f"🏷️ **Birim:** {aktif_rol}")
-        
-        if aktif_rol in ["Montaj-1", "Montaj-2", "Montaj-3"]:
-            istasyon_verisi = db["stations"][aktif_rol]
-            render_live_timer("Çalışma Süresi", get_live_work_time(aktif_rol), istasyon_verisi["status"] == "Çalışıyor")
-            render_live_timer("Mola Süresi", get_live_break_time(aktif_rol), istasyon_verisi["status"] == "Mola")
-            
-        if st.button("🔄 Verileri Güncelle", use_container_width=True):
-            db = load_db()
-            st.rerun()
-            
-        st.divider()
+        st.markdown(f"<h2>👤 {aktif_rol}</h2>", unsafe_allow_html=True)
         if st.button("🚪 Çıkış Yap", use_container_width=True):
             logout()
 
@@ -160,60 +123,58 @@ else:
     # YÖNETİCİ EKRANI
     # ---------------------------------------------------------
     if aktif_rol == "Yönetici":
+        auto_refresh(10) # Yönetici ekranı sürekli yenilenir
         st.title("Yönetici Kontrol Paneli")
         
-        tab1, tab2, tab3 = st.tabs(["Canlı İzleme & Performans", "İş Emri Gönder", "Hata Kayıtları"])
+        tab1, tab2, tab3 = st.tabs(["📊 Canlı İzleme & Performans", "🚀 İş Emri Gönder", "⚠️ Hata Kayıtları"])
         
         with tab1:
-            st.subheader("İstasyonların Canlı Durumu")
             c1, c2, c3 = st.columns(3)
             istasyonlar = ["Montaj-1", "Montaj-2", "Montaj-3"]
             
+            # Canlı Durum Kartları
             for index, istasyon in enumerate(istasyonlar):
                 with [c1, c2, c3][index]:
                     veri = db["stations"][istasyon]
-                    st.markdown(f"### {istasyon}")
+                    st.markdown(f"<h2 style='text-align:center;'>{istasyon}</h2>", unsafe_allow_html=True)
                     if veri["status"] == "Bekliyor":
-                        st.warning("Boşta / Bekliyor")
+                        st.info("🟡 BOŞTA / BEKLİYOR")
                     else:
-                        if veri["status"] == "Çalışıyor":
-                            st.success(f"Çalışıyor ({veri['current_qty']}/{veri['target_qty']})")
-                        else:
-                            st.error(f"{veri['status']} ({veri['current_qty']}/{veri['target_qty']})")
+                        renk = "green" if veri["status"] == "Çalışıyor" else "red"
+                        st.markdown(f"<h3 style='text-align:center; color:{renk};'>{veri['status'].upper()}</h3>", unsafe_allow_html=True)
+                        st.metric("Üretim", f"{veri['current_qty']} / {veri['target_qty']}")
                         st.write(f"**İş Emri:** {veri['id']}")
-                        st.write(f"**Çalışma:** {format_time(get_live_work_time(istasyon))}")
+                        st.write(f"**Süre:** {format_time(get_live_work_time(istasyon))}")
                         
-                        if st.button(f"🚨 {istasyon} DURDUR", key=f"dur_{istasyon}"):
+                        if st.button(f"🚨 DURDUR", key=f"dur_{istasyon}", use_container_width=True):
                             if veri["status"] == "Çalışıyor" and veri["last_work_start"]:
                                 veri["work_time"] += time.time() - veri["last_work_start"]
                                 veri["last_work_start"] = None
-                            if veri["status"] == "Mola" and veri["last_break_start"]:
-                                veri["break_time"] += time.time() - veri["last_break_start"]
-                                veri["last_break_start"] = None
                             veri["status"] = "Duraklatıldı"
                             save_db(db)
                             st.rerun()
                             
             st.divider()
-            st.subheader("📊 Performans ve Darboğaz Analizi")
-            perf_data = []
-            for istasyon in istasyonlar:
-                veri = db["stations"][istasyon]
-                gecmis_veri = db["performance"][istasyon]
-                
-                aktif_sure = get_live_work_time(istasyon)
-                aktif_adet = veri['current_qty']
-                ort_sure = aktif_sure / aktif_adet if aktif_adet > 0 else 0
-                
-                perf_data.append({
-                    "İstasyon": istasyon,
-                    "Aktif İş Emri Adedi": f"{aktif_adet} / {veri['target_qty']}",
-                    "Ortalama Süre / Parça": format_time(ort_sure),
-                    "Toplam Tamamlanan İş Emri": gecmis_veri["tamamlanan_is_emri"],
-                    "Toplam Üretilen Parça": gecmis_veri["toplam_uretilen_parca"]
-                })
+            st.subheader("📈 Günlük & Genel Grafik Analizleri")
             
-            st.dataframe(pd.DataFrame(perf_data), use_container_width=True)
+            grafik_col1, grafik_col2 = st.columns(2)
+            
+            # Üretim Grafiği
+            with grafik_col1:
+                st.markdown("**İstasyon Bazlı Toplam Üretim (Adet)**")
+                uretim_verisi = {ist: db["performance"][ist]["toplam_uretilen_parca"] for ist in istasyonlar}
+                st.bar_chart(pd.DataFrame([uretim_verisi]).T)
+                
+            # Kalite Bekleme Grafiği
+            with grafik_col2:
+                st.markdown("**Ortalama Kalite Onayı Bekleme Süresi (Saniye)**")
+                qc_df = pd.DataFrame(db["qc_logs"])
+                if not qc_df.empty:
+                    # İstasyonlara göre ortalama süreyi hesapla
+                    ortalama_qc = qc_df.groupby("İstasyon")["Bekleme_Suresi_Sn"].mean()
+                    st.bar_chart(ortalama_qc)
+                else:
+                    st.info("Henüz kalite onayı ölçümü bulunmuyor.")
 
         with tab2:
             st.subheader("Yeni İş Emri Gönder")
@@ -224,11 +185,11 @@ else:
                 sn_id = st.text_input("Ürün Seri Numarası (Başlangıç):", value="SN-123456")
                 hedef_sayi = st.number_input("Üretilecek Adet (Hedef):", min_value=1, value=50)
                 
-                if st.button("🚀 Üretime Başla (İş Emrini Gönder)", type="primary"):
+                if st.button("🚀 Üretime Başla", type="primary", use_container_width=True):
                     db["stations"][hedef_istasyon] = {
                         "status": "Çalışıyor", "id": wo_id, "sn": sn_id, "target_qty": hedef_sayi,
                         "current_qty": 1, "step": 1, "work_time": 0.0, "break_time": 0.0,
-                        "last_work_start": time.time(), "last_break_start": None
+                        "last_work_start": time.time(), "last_break_start": None, "qc_req_time": None
                     }
                     save_db(db)
                     st.success(f"İş emri {hedef_istasyon} istasyonuna gönderildi!")
@@ -239,16 +200,14 @@ else:
             if len(db["errors"]) > 0:
                 for hata in reversed(db["errors"]):
                     with st.expander(f"⚠️ {hata['Tarih/Saat']} - {hata['İstasyon']} (İş Emri: {hata['İş Emri']})"):
-                        st.write(f"**Montaj Dönemi:** {hata['Montaj_Donemi']}")
-                        st.write(f"**Hatalı Adım:** {hata['Hatali_Adim']}")
-                        st.write(f"**Bölge:** {hata['Bölge']}")
+                        st.write(f"**Montaj Dönemi:** {hata['Montaj_Donemi']} | **Adım:** {hata['Hatali_Adim']} | **Bölge:** {hata['Bölge']}")
                         if hata['Onceden_Hatali']:
-                            st.error("🚨 Bu parça istasyona önceden hatalı gelmiş!")
+                            st.error("🚨 Parça istasyona önceden hatalı gelmiş!")
                         st.write(f"**Açıklama:** {hata['Açıklama']}")
                         if hata.get("Foto_Base64"):
                             try:
                                 img_data = base64.b64decode(hata["Foto_Base64"])
-                                st.image(img_data, caption="Yüklenen Hata Görseli", width=400)
+                                st.image(img_data, width=400)
                             except:
                                 st.warning("Görsel yüklenemedi.")
             else:
@@ -258,27 +217,26 @@ else:
     # KALİTE EKRANI
     # ---------------------------------------------------------
     elif aktif_rol == "Kalite":
-        st.title("Kalite Kontrol Paneli")
+        auto_refresh(10) # Kalite ekranı sürekli yenilenir
+        st.title("🔍 Kalite Kontrol Merkezi")
         
-        # ONAY BEKLEYENLERİ BUL
         bekleyenler = [s for s, v in db["stations"].items() if v["step"] == 3 and v["status"] == "Çalışıyor"]
+        
         if bekleyenler:
-            st.error(f"🚨 DİKKAT: Kalite Onayı Bekleyen İstasyon(lar) Var: **{', '.join(bekleyenler)}**")
+            st.markdown("<div style='padding: 20px; background-color: #ff4b4b; color: white; border-radius: 10px; font-size: 24px; text-align: center;'>"
+                        f"🚨 ACİL ONAY BEKLEYEN İSTASYONLAR:<br><b>{', '.join(bekleyenler)}</b></div>", unsafe_allow_html=True)
         else:
-            st.success("✅ Şu an kalite onayı bekleyen aktif istasyon bulunmuyor.")
+            st.markdown("<div style='padding: 20px; background-color: #00cc66; color: white; border-radius: 10px; font-size: 24px; text-align: center;'>"
+                        "✅ ONAY BEKLEYEN İSTASYON YOK</div>", unsafe_allow_html=True)
             
         st.divider()
-        st.subheader("Hata Bildirimleri")
+        st.subheader("Sahadaki Hata Bildirimleri")
         if len(db["errors"]) > 0:
             for hata in reversed(db["errors"]):
                 with st.expander(f"⚠️ {hata['Tarih/Saat']} - {hata['İstasyon']}"):
-                    st.write(f"**Adım:** {hata['Hatali_Adim']} | **Bölge:** {hata['Bölge']}")
-                    st.write(f"**Açıklama:** {hata['Açıklama']}")
-                    if hata['Onceden_Hatali']: st.error("🚨 Parça önceden hatalı.")
+                    st.write(f"**Bölge:** {hata['Bölge']} | **Açıklama:** {hata['Açıklama']}")
                     if hata.get("Foto_Base64"):
                         st.image(base64.b64decode(hata["Foto_Base64"]), width=300)
-        else:
-            st.write("Kayıtlı hata bulunmuyor.")
 
     # ---------------------------------------------------------
     # İSTASYON EKRANI
@@ -287,28 +245,30 @@ else:
         istasyon_verisi = db["stations"][aktif_rol]
         durum = istasyon_verisi["status"]
         
+        # Bekleme durumunda form kaybı olmaması için sadece o zaman yenile
         if durum == "Bekliyor":
-            st.warning("⏳ Yöneticiden yeni iş emri bekleniyor...")
+            auto_refresh(10)
+            st.markdown("<br><br><h1 style='text-align: center; color: #ffcc00; font-size: 50px;'>⏳ YENİ İŞ EMRİ BEKLENİYOR...</h1>", unsafe_allow_html=True)
         else:
-            if durum == "Çalışıyor":
-                st.success(f"🟢 {aktif_rol} AKTİF - Üretim No: {istasyon_verisi['current_qty']} / {istasyon_verisi['target_qty']}")
-            else:
-                st.error(f"🔴 {aktif_rol} DURDU - Durum: {durum} - Üretim No: {istasyon_verisi['current_qty']} / {istasyon_verisi['target_qty']}")
+            # İRİ VE BELİRGİN BAŞLIK
+            st.markdown(f"<div style='background-color: #f0f2f6; padding: 10px; border-radius: 10px;'>"
+                        f"<h1 style='text-align: center; color: #000; font-size: 45px;'>ÜRÜN: {istasyon_verisi['sn']}</h1>"
+                        f"<h2 style='text-align: center; color: #555;'>Üretim No: {istasyon_verisi['current_qty']} / {istasyon_verisi['target_qty']}</h2>"
+                        f"</div><br>", unsafe_allow_html=True)
             
-            sol, orta, sag = st.columns([1.2, 2, 1.5])
+            sol, orta, sag = st.columns([1, 2, 1.2])
 
             with sol:
-                st.subheader("Mevcut Görev")
-                st.info(f"**Ürün SN:** {istasyon_verisi['sn']}\n\n**İş Emri:** {istasyon_verisi['id']}")
+                st.info(f"**İş Emri:** {istasyon_verisi['id']}")
                 
                 if durum == "Duraklatıldı":
-                    if st.button("▶️ İşe Devam Et", use_container_width=True):
+                    if st.button("▶️ İŞE DEVAM ET", use_container_width=True, type="primary"):
                         istasyon_verisi["last_work_start"] = time.time()
                         istasyon_verisi["status"] = "Çalışıyor"
                         save_db(db)
                         st.rerun()
                 elif durum == "Çalışıyor":
-                    if st.button("⏸️ İşi Duraklat", use_container_width=True):
+                    if st.button("⏸️ İŞİ DURAKLAT", use_container_width=True):
                         if istasyon_verisi["last_work_start"]:
                             istasyon_verisi["work_time"] += time.time() - istasyon_verisi["last_work_start"]
                             istasyon_verisi["last_work_start"] = None
@@ -317,71 +277,84 @@ else:
                         st.rerun()
 
                 st.divider()
-                if st.button("☕ Mola Menüsü", use_container_width=True):
-                    st.session_state.show_break_modal = not st.session_state.show_break_modal
-                    
-                if st.session_state.show_break_modal:
-                    with st.expander("Mola İşlemleri", expanded=True):
-                        if durum != "Mola":
-                            if st.button("Molaya Çık", type="primary"):
-                                if istasyon_verisi["status"] == "Çalışıyor" and istasyon_verisi["last_work_start"]:
-                                    istasyon_verisi["work_time"] += time.time() - istasyon_verisi["last_work_start"]
-                                    istasyon_verisi["last_work_start"] = None
-                                istasyon_verisi["last_break_start"] = time.time()
-                                istasyon_verisi["status"] = "Mola"
-                                st.session_state.show_break_modal = False
-                                save_db(db)
-                                st.rerun()
-                        else:
-                            if st.button("Moladan Dön", type="primary"):
-                                if istasyon_verisi["last_break_start"]:
-                                    istasyon_verisi["break_time"] += time.time() - istasyon_verisi["last_break_start"]
-                                    istasyon_verisi["last_break_start"] = None
-                                istasyon_verisi["last_work_start"] = time.time()
-                                istasyon_verisi["status"] = "Çalışıyor"
-                                st.session_state.show_break_modal = False
-                                save_db(db)
-                                st.rerun()
+                with st.expander("☕ MOLA İŞLEMLERİ", expanded=False):
+                    if durum != "Mola":
+                        if st.button("Molaya Çık", use_container_width=True):
+                            if istasyon_verisi["status"] == "Çalışıyor" and istasyon_verisi["last_work_start"]:
+                                istasyon_verisi["work_time"] += time.time() - istasyon_verisi["last_work_start"]
+                                istasyon_verisi["last_work_start"] = None
+                            istasyon_verisi["last_break_start"] = time.time()
+                            istasyon_verisi["status"] = "Mola"
+                            save_db(db)
+                            st.rerun()
+                    else:
+                        if st.button("Moladan Dön", use_container_width=True):
+                            if istasyon_verisi["last_break_start"]:
+                                istasyon_verisi["break_time"] += time.time() - istasyon_verisi["last_break_start"]
+                                istasyon_verisi["last_break_start"] = None
+                            istasyon_verisi["last_work_start"] = time.time()
+                            istasyon_verisi["status"] = "Çalışıyor"
+                            save_db(db)
+                            st.rerun()
 
             with orta:
-                st.subheader("Montaj Adımları")
+                st.markdown("### 📋 MONTAJ ADIMLARI")
+                
+                # Örnek Montaj Görseli Eklemesi
+                st.image("https://dummyimage.com/600x150/e0e0e0/000000.png&text=Yonetici+Tarafindan+Yuklenen+Montaj+Gorseli", use_container_width=True)
+
                 if durum == "Çalışıyor":
                     step = istasyon_verisi["step"]
                     
-                    if st.checkbox("Adım 1: Vida Sıkma (2.5 Nm)", value=(step > 1), disabled=(step != 1)) and step == 1:
+                    st.markdown("---")
+                    if st.checkbox("✅ Adım 1: Vida Sıkma (2.5 Nm)", value=(step > 1), disabled=(step != 1)) and step == 1:
                         istasyon_verisi["step"] = 2
                         save_db(db)
                         st.rerun()
                         
-                    if st.checkbox("Adım 2: Kablo Bağlantısı", value=(step > 2), disabled=(step != 2)) and step == 2:
+                    st.markdown("---")
+                    if st.checkbox("✅ Adım 2: Kablo Bağlantısı", value=(step > 2), disabled=(step != 2)) and step == 2:
                         istasyon_verisi["step"] = 3
+                        # Kalite onayı istendiği an süreyi başlat
+                        istasyon_verisi["qc_req_time"] = time.time()
                         save_db(db)
                         st.rerun()
                     
+                    st.markdown("---")
                     if step == 3:
-                        st.error("🔍 Adım 3: Zorunlu Kalite Kontrolü\n\n(Kalite birimine bildirim gönderildi)")
-                        qc_pass = st.text_input("Şifre:", type="password")
-                        if st.button("Kalite Onayını Ver"):
+                        st.error("🔍 ZORUNLU KALİTE KONTROLÜ (Kalite Bekleniyor)")
+                        qc_pass = st.text_input("Kalite Şifresi:", type="password")
+                        if st.button("KALİTE ONAYI VER"):
                             if qc_pass == USERS["kalite1"]["pass"]:
+                                # Kalite bekleme süresini hesapla ve kaydet
+                                if istasyon_verisi.get("qc_req_time"):
+                                    gecen_sure = int(time.time() - istasyon_verisi["qc_req_time"])
+                                    db["qc_logs"].append({
+                                        "Tarih": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                        "İstasyon": aktif_rol,
+                                        "Bekleme_Suresi_Sn": gecen_sure
+                                    })
+                                
                                 istasyon_verisi["step"] = 4
+                                istasyon_verisi["qc_req_time"] = None
                                 save_db(db)
-                                st.success("Onaylandı!")
                                 st.rerun()
                             else:
                                 st.error("Hatalı Şifre!")
                     elif step > 3:
-                        st.checkbox("Adım 3: Kalite Kontrol (Onaylandı)", value=True, disabled=True)
+                        st.checkbox("✅ Adım 3: Kalite Kontrol (ONAYLANDI)", value=True, disabled=True)
                     else:
-                        st.checkbox("Adım 3: Kalite Kontrol (Kilitli)", value=False, disabled=True)
+                        st.checkbox("🔒 Adım 3: Kalite Kontrol (Kilitli)", value=False, disabled=True)
                         
-                    if st.checkbox("Adım 4: Son Kontrol", value=(step > 4), disabled=(step != 4)) and step == 4:
+                    st.markdown("---")
+                    if st.checkbox("✅ Adım 4: Son Kontrol ve Kapatma", value=(step > 4), disabled=(step != 4)) and step == 4:
                         istasyon_verisi["step"] = 5
                         save_db(db)
                         st.rerun()
                         
                     if step > 4:
-                        st.success("Bu parçanın tüm adımları tamamlandı!")
-                        if st.button("✅ Sıradaki Parçaya Geç", type="primary", use_container_width=True):
+                        st.success("TÜM ADIMLAR TAMAMLANDI!")
+                        if st.button("🚀 SIRADAKİ PARÇAYA GEÇ", type="primary", use_container_width=True):
                             db["performance"][aktif_rol]["toplam_uretilen_parca"] += 1
                             if istasyon_verisi["current_qty"] < istasyon_verisi["target_qty"]:
                                 istasyon_verisi["current_qty"] += 1
@@ -395,29 +368,25 @@ else:
                             save_db(db)
                             st.rerun()
                 else:
-                    st.warning("Adımları görebilmek için istasyonun 'Çalışıyor' durumunda olması gerekir.")
+                    st.warning("Adımları görmek için İŞE DEVAM ET butonuna basınız.")
 
             with sag:
-                st.subheader("Bildirim")
-                with st.expander("⚠️ Detaylı Hata Belirt", expanded=False):
+                with st.expander("⚠️ HATA BELİRT", expanded=True):
+                    hata_donemi = st.radio("Hata Türü", ["Şu anki montajda", "Geçmiş montajdan geldi"])
+                    hatali_adim = st.selectbox("Adım", ["Bilinmiyor", "Adım 1", "Adım 2", "Adım 3", "Adım 4"])
+                    onceden_hatali = st.checkbox("Parça hatalı geldi")
                     
-                    hata_donemi = st.radio("Hata Hangi Montajda Oldu?", ["Mevcut Montaj (Şu anki)", "Önceki Montaj (Geçmiş Parça)"])
-                    hatali_adim = st.selectbox("Hangi Adımda Hata Var?", ["Bilinmiyor", "Adım 1", "Adım 2", "Adım 3", "Adım 4"])
-                    onceden_hatali = st.checkbox("Parça buraya gelmeden önce zaten hatalıydı")
-                    
-                    st.write("**Bölge Seçiniz:**")
-                    hata_bolgesi = st.selectbox("Nerede:", ["Seçilmedi", "Ön Yüz", "Arka Yüz", "Yan", "İç"])
+                    hata_bolgesi = st.selectbox("Bölge:", ["Seçilmedi", "Ön Yüz", "Arka Yüz", "Yan", "İç"])
                     hata_aciklama = st.text_area("Açıklama:")
+                    foto_dosya = st.file_uploader("Görsel Ekle", type=["png", "jpg", "jpeg"])
                     
-                    foto_dosya = st.file_uploader("Fotoğraf Yükle (İsteğe Bağlı)", type=["png", "jpg", "jpeg"])
-                    
-                    if st.button("Hatayı Gönder", type="primary"):
+                    if st.button("HATAYI İLET", type="primary", use_container_width=True):
                         if hata_bolgesi != "Seçilmedi" and hata_aciklama != "":
                             foto_base64 = None
                             if foto_dosya is not None:
                                 foto_base64 = base64.b64encode(foto_dosya.read()).decode("utf-8")
                                 
-                            yeni_hata = {
+                            db["errors"].append({
                                 "Tarih/Saat": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "İstasyon": aktif_rol,
                                 "İş Emri": istasyon_verisi['id'],
@@ -427,9 +396,8 @@ else:
                                 "Bölge": hata_bolgesi,
                                 "Açıklama": hata_aciklama,
                                 "Foto_Base64": foto_base64
-                            }
-                            db["errors"].append(yeni_hata)
+                            })
                             save_db(db)
-                            st.success("Hata ve görsel başarıyla iletildi!")
+                            st.success("İletildi!")
                         else:
-                            st.error("Lütfen bölge seçin ve açıklama yazın.")
+                            st.error("Bölge ve açıklama giriniz.")
