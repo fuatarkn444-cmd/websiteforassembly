@@ -12,10 +12,16 @@ if 'logged_in' not in st.session_state:
     st.session_state.username = ""
     st.session_state.role = ""
 
-# İş emri ve zamanlayıcı değişkenleri
+if 'work_time' not in st.session_state:
+    st.session_state.work_time = 0.0
+    st.session_state.break_time = 0.0
+    st.session_state.last_work_start = None
+    st.session_state.last_break_start = None
+    st.session_state.show_break_modal = False
+
 if 'work_order' not in st.session_state:
     st.session_state.work_order = {
-        "status": "Bekliyor", # Bekliyor, Çalışıyor, Duraklatıldı, Mola
+        "status": "Bekliyor", 
         "id": "", 
         "sn": "",
         "target_qty": 0,
@@ -23,17 +29,13 @@ if 'work_order' not in st.session_state:
     }
     st.session_state.current_step = 1
     st.session_state.errors = []
-    
-    # Süre tutma değişkenleri (Saniye cinsinden)
-    st.session_state.work_time = 0.0
-    st.session_state.break_time = 0.0
-    st.session_state.last_work_start = None
-    st.session_state.last_break_start = None
-    st.session_state.show_break_modal = False
 
-# Kullanıcı Hesapları
+# --- KULLANICI HESAPLARI ---
 USERS = {
     "operatör1": {"pass": "1234", "role": "Operatör"},
+    "operatör2": {"pass": "1234", "role": "Operatör"},
+    "operatör3": {"pass": "1234", "role": "Operatör"},
+    "kalite1": {"pass": "kalite123", "role": "Kalite"},
     "admin": {"pass": "admin123", "role": "Yönetici"}
 }
 
@@ -58,7 +60,6 @@ def next_step():
     st.rerun()
 
 def format_time(seconds):
-    # Saniyeyi SS:DD:SS formatına çevirir
     m, s = divmod(int(seconds), 60)
     h, m = divmod(m, 60)
     return f"{h:02d}:{m:02d}:{s:02d}"
@@ -96,7 +97,7 @@ if not st.session_state.logged_in:
             submit_btn = st.form_submit_button("Giriş", use_container_width=True)
             if submit_btn:
                 login(user_input, pass_input)
-        st.info("**Test Hesapları:**\n- Operatör: operatör1 / 1234\n- Yönetici: admin / admin123")
+        st.info("**Hesaplar:**\n- Operatör: operatör1 (Şifre: 1234)\n- Kalite: kalite1 (Şifre: kalite123)\n- Yönetici: admin (Şifre: admin123)")
 
 # --- SİSTEM UYGULAMASI ---
 else:
@@ -105,9 +106,9 @@ else:
         st.write(f"🏷️ **Rol:** {st.session_state.role}")
         st.write(f"⏱️ **Çalışma:** {format_time(get_live_work_time())}")
         st.write(f"☕ **Mola:** {format_time(get_live_break_time())}")
-        if st.button("Sayfayı Yenile (Süreleri Güncelle)"):
+        if st.button("🔄 Süreleri Güncelle"):
             st.rerun()
-        if st.button("Çıkış Yap", use_container_width=True):
+        if st.button("🚪 Çıkış Yap", use_container_width=True):
             logout()
 
     # ---------------------------------------------------------
@@ -123,7 +124,7 @@ else:
             sn_id = st.text_input("Ürün Seri Numarası (Başlangıç):", value="SN-123456")
             hedef_sayi = st.number_input("Üretilecek Adet (Hedef):", min_value=1, value=50)
             
-            if st.button("Üretime Başla (İş Emrini Gönder)", type="primary"):
+            if st.button("🚀 Üretime Başla (İş Emrini Gönder)", type="primary"):
                 st.session_state.work_order = {
                     "status": "Çalışıyor", 
                     "id": wo_id, 
@@ -152,8 +153,8 @@ else:
                 
                 st.metric("Üretim İlerlemesi", f"{st.session_state.work_order['current_qty']} / {st.session_state.work_order['target_qty']}")
                 st.write(f"**Aktif İş Emri:** {st.session_state.work_order['id']} (SN: {st.session_state.work_order['sn']})")
-                st.write(f"**Çalışma Süresi:** {format_time(get_live_work_time())}")
-                st.write(f"**Mola Süresi:** {format_time(get_live_break_time())}")
+                st.write(f"**Toplam Çalışma Süresi:** {format_time(get_live_work_time())}")
+                st.write(f"**Toplam Mola Süresi:** {format_time(get_live_break_time())}")
                 
                 if st.button("🚨 ACİL DURDUR", type="primary"):
                     stop_work_timer()
@@ -162,6 +163,24 @@ else:
                         st.session_state.last_break_start = None
                     st.session_state.work_order["status"] = "Duraklatıldı"
                     st.rerun()
+                    
+        st.divider()
+        st.subheader("⚠️ Bildirilen Hatalar")
+        if len(st.session_state.errors) > 0:
+            st.dataframe(pd.DataFrame(st.session_state.errors), use_container_width=True)
+        else:
+            st.write("Kayıtlı hata bulunmuyor.")
+
+    # ---------------------------------------------------------
+    # KALİTE EKRANI
+    # ---------------------------------------------------------
+    elif st.session_state.role == "Kalite":
+        st.title("Kalite Kontrol Paneli")
+        st.info("Bu ekran istasyondaki hata bildirimlerini izlemek içindir. Operatör ekranındaki zorunlu kalite adımını operatörün tabletinden 'kalite123' şifresi ile onaylayabilirsiniz.")
+        if len(st.session_state.errors) > 0:
+            st.dataframe(pd.DataFrame(st.session_state.errors), use_container_width=True)
+        else:
+            st.write("Aktif bir hata kaydı bulunmuyor.")
 
     # ---------------------------------------------------------
     # OPERATÖR EKRANI
@@ -178,12 +197,12 @@ else:
             else:
                 st.error(f"🔴 İSTASYON DURDU - Durum: {durum} - Üretim No: {st.session_state.work_order['current_qty']} / {st.session_state.work_order['target_qty']}")
             
-            sol, orta, sag = st.columns([1, 2, 1])
+            sol, orta, sag = st.columns([1.2, 2, 1.2])
 
             # SOL KOLON (Kontrol)
             with sol:
                 st.subheader("Mevcut Görev")
-                st.info(f"**Ürün:** {st.session_state.work_order['sn']}\n\n**İş Emri:** {st.session_state.work_order['id']}")
+                st.info(f"**Ürün SN:** {st.session_state.work_order['sn']}\n\n**İş Emri:** {st.session_state.work_order['id']}")
                 
                 if durum == "Duraklatıldı":
                     if st.button("▶️ İşe Devam Et", use_container_width=True):
@@ -195,7 +214,6 @@ else:
                         st.session_state.work_order["status"] = "Duraklatıldı"
                         st.rerun()
 
-                # Mola Pop-up Simülasyonu
                 st.divider()
                 if st.button("☕ Mola Menüsü", use_container_width=True):
                     st.session_state.show_break_modal = not st.session_state.show_break_modal
@@ -230,30 +248,56 @@ else:
                         
                     ad2 = st.checkbox("Adım 2: Kablo Bağlantısı", value=(step > 2), disabled=(step != 2))
                     if ad2 and step == 2: next_step()
+                    
+                    # ADIM 3: KALİTE ONAYI
+                    if step == 3:
+                        st.error("🔍 Adım 3: Zorunlu Kalite Kontrolü")
+                        st.write("Devam etmek için kalite yetkilisinin şifresini girin:")
+                        qc_pass = st.text_input("Şifre:", type="password")
+                        if st.button("Kalite Onayını Ver"):
+                            if qc_pass == USERS["kalite1"]["pass"]:
+                                st.success("Onaylandı!")
+                                next_step()
+                            else:
+                                st.error("Hatalı Şifre!")
+                    elif step > 3:
+                        st.checkbox("Adım 3: Kalite Kontrol (Onaylandı)", value=True, disabled=True)
+                    else:
+                        st.checkbox("Adım 3: Kalite Kontrol (Kilitli)", value=False, disabled=True)
                         
-                    ad3 = st.checkbox("Adım 3: Son Kontrol", value=(step > 3), disabled=(step != 3))
-                    if ad3 and step == 3: next_step()
+                    ad4 = st.checkbox("Adım 4: Son Kontrol", value=(step > 4), disabled=(step != 4))
+                    if ad4 and step == 4: next_step()
                         
-                    if step > 3:
-                        st.success("Bu parçanın montajı tamamlandı!")
-                        if st.button("Sıradaki Parçaya Geç (Kaydet)", type="primary"):
-                            # Hedefe ulaşıldı mı?
+                    if step > 4:
+                        st.success("Tüm adımlar tamamlandı!")
+                        if st.button("✅ Sıradaki Parçaya Geç", type="primary", use_container_width=True):
                             if st.session_state.work_order["current_qty"] < st.session_state.work_order["target_qty"]:
                                 st.session_state.work_order["current_qty"] += 1
                                 st.session_state.current_step = 1
                             else:
                                 stop_work_timer()
                                 st.session_state.work_order["status"] = "Bekliyor"
-                                st.success("Hedef üretim sayısına ulaşıldı! İş emri tamamlandı.")
+                                st.success("Hedef üretime ulaşıldı! İş emri bitti.")
                             st.rerun()
                 else:
                     st.warning("Adımları görebilmek için istasyonun 'Çalışıyor' durumunda olması gerekir.")
 
             # SAĞ KOLON (Hata Belirt)
             with sag:
-                st.subheader("Hata Bildirimi")
+                st.subheader("Bildirim")
                 with st.expander("⚠️ Hata Belirt", expanded=False):
+                    st.write("**Bölge Seçiniz:**")
+                    hata_bolgesi = st.radio("Nerede:", ["Seçilmedi", "Ön Yüz", "Arka Yüz", "Yan", "İç"])
                     hata_aciklama = st.text_area("Açıklama:")
-                    hata_bolgesi = st.radio("Bölge:", ["Ön", "Arka", "Yan", "İç"])
-                    if st.button("Gönder"):
-                        st.success("Hata iletildi!")
+                    if st.button("Hatayı Gönder"):
+                        if hata_bolgesi != "Seçilmedi" and hata_aciklama != "":
+                            yeni_hata = {
+                                "Zaman": datetime.now().strftime("%H:%M:%S"),
+                                "Personel": st.session_state.username,
+                                "Bölge": hata_bolgesi,
+                                "Açıklama": hata_aciklama
+                            }
+                            st.session_state.errors.append(yeni_hata)
+                            st.success("Yöneticiye iletildi!")
+                        else:
+                            st.error("Lütfen bölge seçin ve açıklama yazın.")
