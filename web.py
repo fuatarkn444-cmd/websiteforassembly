@@ -179,7 +179,6 @@ else:
         with tab1:
             st.subheader("İzlenebilirlik ve Canlı Takip Tablosu")
             
-            # Detaylı Tablo Hazırlığı
             tablo_verisi = []
             for ist in ["Montaj-1", "Montaj-2", "Montaj-3"]:
                 veri = db["stations"][ist]
@@ -250,7 +249,6 @@ else:
                     hedef_veri = db["stations"][hedef_istasyon]
                     
                     if is_urgent:
-                        # Eğer içeride çalışan bir iş varsa onu dondur (suspended_job'a at)
                         if hedef_veri["id"] != "":
                             stop_timers(hedef_veri)
                             hedef_veri["suspended_job"] = copy.deepcopy({
@@ -289,7 +287,7 @@ else:
                 for hata in reversed(db["errors"]):
                     with st.container(border=True):
                         st.markdown(f"**{hata['İstasyon']}** | {hata['Tarih/Saat']} | İş Emri: {hata['İş Emri']}")
-                        st.write(f"**Hata Dönemi:** {hata['Montaj_Donemi']} | **Bölge:** {hata['Bölge']}")
+                        st.write(f"**Montaj Dönemi:** {hata['Montaj_Donemi']} | **Bölge:** {hata['Bölge']}")
                         if hata.get('Onceden_Hatali'):
                             st.error("🚨 Parça istasyona önceden hatalı gelmiş!")
                         st.write(f"**Açıklama:** {hata['Açıklama']}")
@@ -324,7 +322,6 @@ else:
                 
         # 2. NORMAL AKIŞ
         else:
-            # ÜST BİLGİ BARI
             if durum not in ["Bekliyor", "Tamamlandı"]:
                 st.markdown(f"""
                     <div style='display: flex; justify-content: space-between; background-color: #f1f3f5; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
@@ -337,7 +334,6 @@ else:
             if durum == "Bekliyor":
                 st.markdown("<div class='kiosk-card'><div class='kiosk-title'>☕ BEKLEMEDE</div><div class='kiosk-subtitle'>Yeni iş emri bekleniyor...</div></div>", unsafe_allow_html=True)
                 
-                # Eğer askıda iş varsa geri dönebilme
                 if ist.get("suspended_job"):
                     st.info("📌 Daha önceden yarım kalan (askıya alınan) bir işiniz var.")
                     if st.button("Askıdaki İşe Geri Dön", use_container_width=True):
@@ -440,7 +436,6 @@ else:
                             ist["status"] = "Tamamlandı"
                             db["performance"][aktif_rol]["tamamlanan_is_emri"] += 1
                             
-                            # Tamamlanan işi geçmişe at
                             db["completed_jobs"].append({
                                 "id": ist["id"], "sn": ist["sn"], "station": aktif_rol, "date": datetime.now().strftime("%Y-%m-%d %H:%M")
                             })
@@ -468,7 +463,7 @@ else:
                             if db["stations"][hedef]["status"] in ["Bekliyor", "Tamamlandı"]:
                                 stop_timers(ist)
                                 db["stations"][hedef] = copy.deepcopy(ist)
-                                db["stations"][hedef]["status"] = "Duraklatıldı" # Hedefte duraklatılmış başlasın
+                                db["stations"][hedef]["status"] = "Duraklatıldı"
                                 db["stations"][aktif_rol] = get_empty_station()
                                 save_db(db)
                                 st.success("Aktarıldı!")
@@ -476,37 +471,51 @@ else:
                             else:
                                 st.error("Hedef istasyon şu an dolu!")
 
-            # --- SADECE BİTMİŞ İŞLER İÇİN HATA BİLDİRİMİ ---
+            # --- TÜM MONTAJLAR İÇİN KAPSAMLI HATA BİLDİRİMİ (YENİ VE ESKİ İŞLER) ---
             st.divider()
-            with st.expander("📝 GEÇMİŞ İŞLERDE HATA BİLDİR (Sadece Tamamlananlar)"):
-                gecmis_isler = [j for j in db["completed_jobs"] if j["station"] == aktif_rol]
-                if gecmis_isler:
-                    secilen_is = st.selectbox("Hatalı İş Emri:", [f"{j['id']} - {j['date']}" for j in reversed(gecmis_isler)])
-                    hata_bolgesi = st.selectbox("Bölge:", ["Ön Yüz", "Arka Yüz", "Yan", "İç", "Diğer"])
-                    hata_aciklama = st.text_area("Açıklama:")
-                    onceden_hatali = st.checkbox("Parça bana hatalı gelmişti")
-                    foto = st.file_uploader("Görsel (Opsiyonel)", type=["png", "jpg", "jpeg"])
+            with st.expander("⚠️ HATA BİLDİR (Aktif veya Geçmiş Montajlar İçin)"):
+                # Seçenekler: Aktif iş veya Tamamlanmış işler
+                aktif_is_secenegi = f"Aktif İş: {ist['id']} (SN: {ist['sn']})" if ist['id'] != "" else None
+                gecmis_isler = [f"Geçmiş İş: {j['id']} - {j['date']}" for j in db["completed_jobs"] if j["station"] == aktif_rol]
+                
+                secenekler = []
+                if aktif_is_secenegi:
+                    secenekler.append(aktif_is_secenegi)
+                secenekler.extend(gecmis_isler)
+                
+                if secenekler:
+                    secilen_is_emri = st.selectbox("Hatanın Ait Olduğu İş:", secenekler)
+                    hata_donemi = "Şu anki (Yeni) Montaj" if secilen_is_emri == aktif_is_secenegi else "Geçmiş Montaj"
                     
-                    if st.button("Geçmişe Dönük Hatayı İlet", type="primary"):
-                        if hata_aciklama != "":
+                    hatali_adim = st.selectbox("Hatalı Adım:", ["Adım 1", "Adım 2", "Adım 3", "Adım 4", "Genel"])
+                    onceden_hatali = st.checkbox("Parça buraya gelmeden önce zaten hatalıydı")
+                    hata_bolgesi = st.selectbox("Hata Bölgesi:", ["Seçilmedi", "Ön Yüz", "Arka Yüz", "Yan", "İç", "Diğer"])
+                    hata_aciklama = st.text_area("Hata Açıklaması:")
+                    foto = st.file_uploader("Görsel Ekle (Opsiyonel)", type=["png", "jpg", "jpeg"])
+                    
+                    if st.button("Hatayı Yöneticiye Gönder", type="primary", use_container_width=True):
+                        if hata_bolgesi != "Seçilmedi" and hata_aciklama != "":
                             foto_base64 = base64.b64encode(foto.read()).decode("utf-8") if foto else None
+                            
+                            hedef_is_id = secilen_is_emri.split(":")[1].split(" ")[1] if "Aktif" in secilen_is_emri else secilen_is_emri.split(":")[1].split(" - ")[0].strip()
+                            
                             db["errors"].append({
                                 "Tarih/Saat": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "İstasyon": aktif_rol,
-                                "İş Emri": secilen_is.split(" - ")[0],
-                                "Montaj_Donemi": "Geçmiş İş Emri",
-                                "Hatali_Adim": "Sonradan Fark Edildi",
+                                "İş Emri": hedef_is_id,
+                                "Montaj_Donemi": hata_donemi,
+                                "Hatali_Adim": hatali_adim,
                                 "Onceden_Hatali": onceden_hatali,
                                 "Bölge": hata_bolgesi,
                                 "Açıklama": hata_aciklama,
                                 "Foto_Base64": foto_base64
                             })
                             save_db(db)
-                            st.success("Hata detaylarıyla iletildi!")
+                            st.success("Hata ve detaylar başarıyla yöneticiye iletildi!")
                         else:
-                            st.error("Açıklama zorunludur.")
+                            st.error("Lütfen hata bölgesini seçin ve açıklama yazın.")
                 else:
-                    st.info("Henüz tamamladığınız bir iş emri bulunmuyor.")
+                    st.info("Şu an üzerinde aktif bir iş veya geçmişte tamamlanmış bir iş bulunmuyor.")
 
     # ---------------------------------------------------------
     # KALİTE EKRANI
@@ -525,8 +534,11 @@ else:
         if db["errors"]:
             for hata in reversed(db["errors"]):
                 with st.container(border=True):
-                    st.markdown(f"**{hata['İstasyon']}** | {hata['Tarih/Saat']}")
-                    st.write(f"**Bölge:** {hata['Bölge']} | **Açıklama:** {hata['Açıklama']}")
+                    st.markdown(f"**{hata['İstasyon']}** | İş Emri: {hata['İş Emri']} | {hata['Tarih/Saat']}")
+                    st.write(f"**Tür:** {hata['Montaj_Donemi']} | **Adım:** {hata['Hatali_Adim']} | **Bölge:** {hata['Bölge']}")
+                    if hata.get('Onceden_Hatali'):
+                        st.error("🚨 Parça önceden hatalı gelmiş.")
+                    st.write(f"**Açıklama:** {hata['Açıklama']}")
                     if hata.get("Foto_Base64"):
                         st.image(base64.b64decode(hata["Foto_Base64"]), width=300)
         else:
