@@ -22,6 +22,7 @@ st.markdown("""
     .urgent-alert { background-color: #dc3545; color: white; padding: 40px; border-radius: 20px; text-align: center; border: 5px solid #8b0000; margin-top: 20px;}
     .urgent-title { font-size: 60px; font-weight: 900; margin-bottom: 20px; line-height: 1.1;}
     .new-error-alert { background-color: #fff3cd; color: #856404; padding: 20px; border-left: 10px solid #ffeeba; border-radius: 5px; margin-bottom: 20px; font-size: 20px;}
+    .timer-box { font-size: 35px; font-weight: bold; color: #d9534f; background: #ffebeb; padding: 10px 20px; border-radius: 10px; display: inline-block; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -50,7 +51,7 @@ def load_db():
         },
         "completed_jobs": [], 
         "errors": [],
-        "work_order_templates": [] # Kayıtlı şablonlar
+        "work_order_templates": [] 
     }
     
     if not os.path.exists(DB_FILE):
@@ -172,7 +173,6 @@ else:
     if aktif_rol == "Yönetici":
         st.title("Yönetici Kontrol Paneli")
         
-        # 1. YENİ HATA ALARMLARI (EN TEPEDE GÖRÜNÜR)
         yeni_hatalar = [h for h in db["errors"] if h.get("is_new", True)]
         if yeni_hatalar:
             st.error("🚨 DİKKAT: YENİ HATA BİLDİRİMLERİ VAR!")
@@ -189,7 +189,6 @@ else:
                             st.rerun()
             st.divider()
         
-        # 2. TAMAMLANAN İŞ ALARMI
         tamamlanan_istasyonlar = [ist for ist, veri in db["stations"].items() if veri["status"] == "Tamamlandı"]
         if tamamlanan_istasyonlar:
             st.success(f"🎉 **{', '.join(tamamlanan_istasyonlar)}** iş emrini tamamladı! Yeni iş emri bekliyorlar.")
@@ -261,7 +260,6 @@ else:
         with tab2:
             st.subheader("Yeni İş Emri Gönder")
             
-            # Kayıtlı Şablonlardan Seçim
             sablonlar = ["-- Yeni (Boş) Form --"] + [f"{t['wo_id']} (SN: {t['sn_id']})" for t in db.get("work_order_templates", [])]
             secilen_sablon = st.selectbox("Geçmiş İş Emirlerinden Seç (Hızlı Doldur):", sablonlar)
             
@@ -286,7 +284,6 @@ else:
                 is_urgent = st.checkbox("🚨 ACİL İŞ EMRİ (Operatöre uyarı gider, mevcut iş askıya alınır)")
                 
                 if st.button("🚀 İş Emrini Gönder", type="primary", use_container_width=True):
-                    # Şablonu Kaydet
                     if wo_id != "" and not any(t["wo_id"] == wo_id for t in db["work_order_templates"]):
                         db["work_order_templates"].append({"wo_id": wo_id, "sn_id": sn_id})
 
@@ -302,7 +299,7 @@ else:
                         hedef_veri["urgent_alert"] = True
                         st.success(f"Acil İş Emri {hedef_istasyon} personeline bildirildi!")
                     else:
-                        stop_timers(hedef_veri) # Varsa mola sayacını falan durdur
+                        stop_timers(hedef_veri)
                         db["stations"][hedef_istasyon] = {
                             "status": "Onay Bekliyor", "id": wo_id, "sn": sn_id, "target_qty": hedef_sayi,
                             "current_qty": 1, "step": 1, "work_time": 0.0, "break_time": 0.0, "qc_wait_time": 0.0,
@@ -343,7 +340,8 @@ else:
                         "İstasyon (Personel)": job["station"],
                         "İş Emri": job["id"],
                         "Ürün SN": job["sn"],
-                        "Tamamlanan": f"{job['target_qty']} Adet",
+                        # 'get' kullanılarak geriye dönük uyumluluk (KeyError çözümü) eklendi
+                        "Tamamlanan": f"{job.get('target_qty', 'Bilinmiyor')} Adet",
                         "Hata Kaydı": hata_durumu,
                         "Hata Açıklaması": hata_notu
                     })
@@ -372,7 +370,6 @@ else:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("⚡ HEMEN GEÇ (Mevcut İşi Askıya Al)", type="primary", use_container_width=True):
-                    # Mevcut işi durdur ve askıya al (Eğer iş varsa)
                     if ist["id"] != "":
                         stop_timers(ist)
                         ist["suspended_job"] = {
@@ -395,13 +392,12 @@ else:
                     st.rerun()
             with c2:
                 if st.button("⏳ MEVCUT İŞİME DEVAM ET (Acil İşi Kenarda Beklet)", use_container_width=True):
-                    ist["urgent_alert"] = False # Uyarıyı kapat ama pending'de kalsın
+                    ist["urgent_alert"] = False
                     save_db(db)
                     st.rerun()
                 
-        # 2. NORMAL AKIŞ (Acil uyarı kapalıysa)
+        # 2. NORMAL AKIŞ 
         else:
-            # EĞER KENARDA BEKLEYEN ACİL İŞ VARSA ÜSTTE BUTON ÇIKAR
             if ist.get("pending_urgent_job"):
                 st.error("🚨 KENARDA BEKLEYEN ACİL BİR İŞİNİZ VAR!")
                 if st.button("Geçiş Yapmak İçin Tıkla (Mevcut İş Askıya Alınır)", use_container_width=True):
@@ -424,7 +420,6 @@ else:
                     st.rerun()
                 st.divider()
 
-            # ÜST BİLGİ BARI VE DEV SÜRE SAYACI (Streamlit Columns ile düzeltildi)
             if durum not in ["Bekliyor", "Boşta Mola", "Tamamlandı", "Onay Bekliyor"]:
                 col_i1, col_i2, col_i3 = st.columns(3)
                 col_i1.info(f"📦 **Ürün:** {ist['sn']} \n\n 🏷️ **İş Emri:** {ist['id']}")
@@ -432,7 +427,6 @@ else:
                 col_i3.error(f"⏱️ **Çalışma Süresi:** \n\n {format_time(get_live_work_time(aktif_rol))}")
                 st.markdown("<br>", unsafe_allow_html=True)
             
-            # --- DURUMLAR ---
             if durum == "Bekliyor" or durum == "Boşta Mola":
                 if durum == "Bekliyor":
                     st.markdown("<div class='kiosk-card'><div class='kiosk-title'>☕ BEKLEMEDE</div><div class='kiosk-subtitle'>Yeni iş emri bekleniyor...</div></div>", unsafe_allow_html=True)
@@ -445,7 +439,7 @@ else:
                             ist["status"] = "Boşta Mola"
                             save_db(db)
                             st.rerun()
-                else: # Boşta Mola
+                else: 
                     st.markdown(f"<div class='kiosk-card' style='border: 3px solid #dc3545;'><div class='kiosk-title' style='color:#dc3545;'>⏸️ DURUŞTA ({ist['break_reason']})</div><div class='kiosk-subtitle'>Süreniz sayılıyor. İş emri bekleniyor...</div></div>", unsafe_allow_html=True)
                     if st.button("▶️ MOLAYI BİTİR (Beklemeye Dön)", type="primary", use_container_width=True):
                         if ist["last_break_start"]:
@@ -456,7 +450,6 @@ else:
                         save_db(db)
                         st.rerun()
 
-                # Eğer askıda iş varsa
                 if ist.get("suspended_job"):
                     st.info("📌 Daha önceden yarım kalan (askıya alınan) bir işiniz var.")
                     if st.button("Askıdaki İşe Geri Dön", use_container_width=True):
@@ -556,7 +549,6 @@ else:
                         save_db(db)
                         st.rerun()
                 
-                # --- OPERASYONEL İŞLEMLER (Duruş ve Aktarma) ---
                 st.divider()
                 op_c1, op_c2 = st.columns(2)
                 with op_c1:
@@ -585,7 +577,6 @@ else:
                             else:
                                 st.error("Hedef istasyon şu an dolu!")
 
-            # --- TÜM MONTAJLAR İÇİN KAPSAMLI HATA BİLDİRİMİ ---
             st.divider()
             with st.expander("⚠️ HATA BİLDİR (Aktif veya Geçmiş Montajlar İçin)"):
                 aktif_is_secenegi = f"Aktif İş: {ist['id']} (SN: {ist['sn']})" if ist['id'] != "" else None
@@ -621,7 +612,7 @@ else:
                                 "Bölge": hata_bolgesi,
                                 "Açıklama": hata_aciklama,
                                 "Foto_Base64": foto_base64,
-                                "is_new": True # YENİ HATA BAYRAĞI
+                                "is_new": True 
                             })
                             save_db(db)
                             st.success("Hata ve detaylar başarıyla yöneticiye iletildi!")
