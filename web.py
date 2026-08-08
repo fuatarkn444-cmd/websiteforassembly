@@ -1,3 +1,8 @@
+# =====================================================================
+# DİJİTAL SİS - MONTAJ TAKİP SİSTEMİ
+# Diller: Python (Ana Mantık), CSS (Görsellik), JavaScript (Canlı Sayaç)
+# =====================================================================
+
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -11,7 +16,7 @@ import copy
 
 
 # 1. SAYFA AYARLARI VE TASARIM (CSS)
-
+# =====================================================================
 st.set_page_config(page_title="Dijital Sis - Kiosk & Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -26,8 +31,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# 2. VERİTABANI YÖNETİMİ (JavaScript)
-# Verileri belli bir süre saklayabilmek için kullanılıyor. Bunu kullanıcılar arası taşımada da kullanılıyor.
+# 2. VERİTABANI YÖNETİMİ(JavaScript; verileri saklamak ve aktarmada da kullanılan bu)
+# =====================================================================
 DB_FILE = "db.json"
 
 def get_empty_station():
@@ -94,18 +99,18 @@ def save_db(data):
 db = load_db()
 
 
-# 3. KULLANICI GİRİŞİ (LOGİN)
-# Sadece kullanıcı adlarının doğru girilmeis için yapılmış bir kısım.
+# 3. KULLANICI GİRİŞİ 
+# =====================================================================
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
 
 USERS = {
-    "montaj1": {"pass": "mantaj1", "role": "Montaj-1"},
-    "montaj2": {"pass": "montaj2", "role": "Montaj-2"},
-    "montaj3": {"pass": "montaj3", "role": "Montaj-3"},
-    "kalite": {"pass": "kalite123", "role": "Kalite"},
+    "m1": {"pass": "1234", "role": "Montaj-1"},
+    "m2": {"pass": "1234", "role": "Montaj-2"},
+    "m3": {"pass": "1234", "role": "Montaj-3"},
+    "kalite1": {"pass": "kalite123", "role": "Kalite"},
     "admin": {"pass": "admin123", "role": "Yönetici"}
 }
 
@@ -126,7 +131,7 @@ def logout():
 
 
 # 4. KRONOMETRE HESAPLAMALARI
-# Süre sayarın görünümünü ondalıklı dakikadan __ dakika __ saniye yazabilmek için kullanılıyor.
+# ==süreyi hesaplamak ve dönüştürmek için
 def format_dk_sn(seconds):
     if seconds <= 0: return "0 dk 0 sn"
     dk = int(seconds // 60)
@@ -164,7 +169,7 @@ def stop_timers(istasyon_verisi):
 
 
 # 5. GİRİŞ EKRANI
-# Kullanıcı girişi için olan ekranın arkaplan ayarları.
+# =====================================================================
 if not st.session_state.logged_in:
     st.markdown("<br><br><h1 style='text-align: center; font-size: 70px;'>DİJİTAL SİS</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.5, 1])
@@ -177,15 +182,14 @@ if not st.session_state.logged_in:
 
 
 # 6. SİSTEM İÇİ EKRANLAR
-# Soldaki sidebar ' ın içindeki yazılar
+# =====================================================================
 else:
     aktif_rol = st.session_state.role
     
     with st.sidebar:
         st.title(aktif_rol)
         if aktif_rol in ["Yönetici", "Kalite"]:
-            canli_mod = st.checkbox("🟢 Canlı İzleme", value=True) #Bunu açık bırakırsan sürekli anlık olarak sayfayı kendi içinde yeniliyor. Süre ve veri aktarımı için
-        elif aktif_rol in ["Montaj-1", "Montaj-2", "Montaj-3"]:
+            canli_mod = st.checkbox("🟢 Canlı İzleme", value=True)
         elif aktif_rol in ["Montaj-1", "Montaj-2", "Montaj-3"]:
             durum_kontrol = db["stations"][aktif_rol]["status"]
             urgent_kontrol = db["stations"][aktif_rol]["urgent_alert"]
@@ -197,9 +201,9 @@ else:
         if st.button("🚪 Çıkış Yap", use_container_width=True):
             logout()
 
- 
+    
     # ROL 1: YÖNETİCİ KONTROL PANELİ
- 
+    # -----------------------------------------------------------------
     if aktif_rol == "Yönetici":
         st.title("Yönetici Kontrol Paneli")
         
@@ -357,7 +361,7 @@ else:
                         time.sleep(1)
                         st.rerun()
 
-                with btn_satir_2: # Kullanılan iş emri sonra tekrar kullanılacaksa bu kısım ile kaydedip sayı vs düzeltilerek gönderilebilir.
+                with btn_satir_2:
                     if st.button("💾 Şablon Olarak Kaydet", use_container_width=True):
                         if wo_id != "" and not any(t["wo_id"] == wo_id for t in db["work_order_templates"]):
                             db["work_order_templates"].append({"wo_id": wo_id, "sn_id": sn_id})
@@ -384,7 +388,7 @@ else:
                         st.markdown(f"**{hata['İstasyon']}** | {hata['Tarih/Saat']} | İş Emri: {hata['İş Emri']}")
                         st.write(f"**Dönem:** {hata['Montaj_Donemi']} | **Bölge:** {hata['Bölge']}")
                         st.write(f"**Açıklama:** {hata['Açıklama']}")
-                        # YENİ EKLENDİ: Tüm geçmiş hata kayıtları kısmında fotoğrafı gösteriyor
+                        # YENİ EKLENDİ: Tüm geçmiş hata kayıtları kısmında fotoğrafı gösterir
                         if hata.get("Foto_Base64"):
                             st.image(base64.b64decode(hata["Foto_Base64"]), width=350)
             else:
@@ -406,12 +410,12 @@ else:
 
     
     # ROL 2: OPERATÖR EKRANI
-
+    # -----------------------------------------------------------------
     elif aktif_rol in ["Montaj-1", "Montaj-2", "Montaj-3"]:
         ist = db["stations"][aktif_rol]
         durum = ist["status"]
         
-    # İş emrini operatörün görmesi 
+        # --- OPERATÖR BÖLÜM 1: ACİL DURUM KONTROLÜ ---
         if ist.get("urgent_alert"):
             st.markdown(f"""
                 <div class='urgent-alert'>
@@ -446,7 +450,7 @@ else:
                     save_db(db)
                     st.rerun()
                 
-        #  OPERATÖR BÖLÜM 2: NORMAL İŞLEYİŞ 
+        # --- OPERATÖR BÖLÜM 2: NORMAL İŞLEYİŞ ---
         else:
             if len(ist.get("pending_jobs", [])) > 0:
                 with st.container(border=True):
@@ -625,10 +629,10 @@ else:
                         save_db(db)
                         st.rerun()
             
-            # OPERATÖR ALT MENÜLER: DURUŞ VE HATA BİLDİRİMİ 
+            # --- OPERATÖR ALT MENÜLER: DURUŞ VE HATA BİLDİRİMİ ---
             st.divider()
             
-            # 1. Duruş ve Aktarım Menüleri 
+            # 1. Duruş Bildirme
             op_c1, op_c2 = st.columns(2)
             with op_c1:
                 if durum not in ["Duruş", "Boşta Duruş"]:
@@ -668,7 +672,7 @@ else:
                             else:
                                 st.error("Hedef istasyon dolu!")
 
-            # Hata Bildirim Formu 
+            # Hata Bildirim Formu
             st.write("")
             with st.expander("⚠️ HATA BİLDİR (Aktif veya Geçmiş Montajlar İçin)"):
                 aktif_is_secenegi = f"Aktif İş: {ist['id']} (SN: {ist['sn']})" if ist['id'] != "" else None
@@ -704,10 +708,9 @@ else:
                 else:
                     st.info("İşlem yapılabilecek bir iş emri bulunmuyor.")
 
-    
+  
     # ROL 3: KALİTE EKRANI
     # -----------------------------------------------------------------
-    
     elif aktif_rol == "Kalite":
         st.title("Kalite Kontrol Merkezi")
         bekleyenler = [s for s, v in db["stations"].items() if v.get("step") == 3 and v["status"] == "Çalışıyor"]
