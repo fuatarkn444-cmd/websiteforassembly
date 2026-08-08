@@ -21,7 +21,7 @@ st.markdown("""
     .step-indicator { color: #007bff; font-weight: bold; font-size: 24px; margin-bottom: -10px; }
     .urgent-alert { background-color: #dc3545; color: white; padding: 40px; border-radius: 20px; text-align: center; border: 5px solid #8b0000; margin-top: 20px;}
     .urgent-title { font-size: 60px; font-weight: 900; margin-bottom: 20px; line-height: 1.1;}
-    .timer-box { font-size: 35px; font-weight: bold; color: #d9534f; background: #ffebeb; padding: 10px 20px; border-radius: 10px; display: inline-block; }
+    .new-error-alert { background-color: #fff3cd; color: #856404; padding: 20px; border-left: 10px solid #ffeeba; border-radius: 5px; margin-bottom: 20px; font-size: 20px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -49,7 +49,8 @@ def load_db():
             "Montaj-3": {"tamamlanan_is_emri": 0, "toplam_uretilen_parca": 0}
         },
         "completed_jobs": [], 
-        "errors": []
+        "errors": [],
+        "work_order_templates": [] # Kayıtlı şablonlar
     }
     
     if not os.path.exists(DB_FILE):
@@ -128,7 +129,7 @@ def stop_timers(istasyon_verisi):
     if istasyon_verisi["status"] == "Çalışıyor" and istasyon_verisi["last_work_start"]:
         istasyon_verisi["work_time"] += time.time() - istasyon_verisi["last_work_start"]
         istasyon_verisi["last_work_start"] = None
-    if istasyon_verisi["status"] == "Mola" and istasyon_verisi["last_break_start"]:
+    if istasyon_verisi["status"] in ["Mola", "Boşta Mola"] and istasyon_verisi["last_break_start"]:
         istasyon_verisi["break_time"] += time.time() - istasyon_verisi["last_break_start"]
         istasyon_verisi["last_break_start"] = None
     if istasyon_verisi.get("qc_req_time"):
@@ -157,7 +158,7 @@ else:
         elif aktif_rol in ["Montaj-1", "Montaj-2", "Montaj-3"]:
             durum_kontrol = db["stations"][aktif_rol]["status"]
             urgent_kontrol = db["stations"][aktif_rol]["urgent_alert"]
-            if (durum_kontrol in ["Bekliyor", "Onay Bekliyor", "Tamamlandı"] or durum_kontrol == "Acil Bekliyor") and not urgent_kontrol:
+            if (durum_kontrol in ["Bekliyor", "Boşta Mola", "Onay Bekliyor", "Tamamlandı"] or durum_kontrol == "Acil Bekliyor") and not urgent_kontrol:
                 canli_mod = st.checkbox("🟢 Sistem Takibi", value=True)
             else:
                 canli_mod = st.checkbox("🟢 Çalışma Modu (Süreyi İzle)", value=True)
@@ -171,11 +172,29 @@ else:
     if aktif_rol == "Yönetici":
         st.title("Yönetici Kontrol Paneli")
         
+        # 1. YENİ HATA ALARMLARI (EN TEPEDE GÖRÜNÜR)
+        yeni_hatalar = [h for h in db["errors"] if h.get("is_new", True)]
+        if yeni_hatalar:
+            st.error("🚨 DİKKAT: YENİ HATA BİLDİRİMLERİ VAR!")
+            for i, h in enumerate(yeni_hatalar):
+                with st.container(border=True):
+                    col_err1, col_err2 = st.columns([4, 1])
+                    with col_err1:
+                        st.markdown(f"**{h['İstasyon']}** - {h['Hatali_Adim']} adımında hata bildirdi! (Bölge: {h['Bölge']})")
+                        st.write(f"**Açıklama:** {h['Açıklama']}")
+                    with col_err2:
+                        if st.button("Görüldü / Kapat", key=f"ok_{i}", type="primary"):
+                            h["is_new"] = False
+                            save_db(db)
+                            st.rerun()
+            st.divider()
+        
+        # 2. TAMAMLANAN İŞ ALARMI
         tamamlanan_istasyonlar = [ist for ist, veri in db["stations"].items() if veri["status"] == "Tamamlandı"]
         if tamamlanan_istasyonlar:
             st.success(f"🎉 **{', '.join(tamamlanan_istasyonlar)}** iş emrini tamamladı! Yeni iş emri bekliyorlar.")
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Canlı İzleme", "🚀 İş Emri Ata", "⚠️ Anlık Hatalar", "🗂️ Geçmiş İşler & Sicil"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Canlı İzleme", "🚀 İş Emri Ata", "⚠️ Tüm Hata Kayıtları", "🗂️ Geçmiş İşler & Sicil"])
         
         with tab1:
             st.subheader("İzlenebilirlik ve Canlı Takip Tablosu")
@@ -186,16 +205,22 @@ else:
                 w_time = get_live_work_time(ist)
                 b_time = veri["break_time"]
                 q_time = veri["qc_wait_time"]
-                if veri["status"] == "Mola" and veri["last_break_start"]:
+                if veri["status"] in ["Mola", "Boşta Mola"] and veri["last_break_start"]:
                     b_time += time.time() - veri["last_break_start"]
                 if veri.get("qc_req_time"):
                     q_time += time.time() - veri["qc_req_time"]
                     
+                durum_gosterim = veri["status"]
+                if veri["status"] == "Boşta Mola":
+                    durum_gosterim = f"Mola ({veri['break_reason']}) - İşsiz"
+                elif veri["status"] == "Mola":
+                    durum_gosterim = f"Mola ({veri['break_reason']})"
+                    
                 tablo_verisi.append({
                     "İstasyon": ist,
-                    "Durum": veri["status"],
-                    "Aktif İş Emri": veri["id"] if veri["id"] else "-",
-                    "Üretim Adedi": f"{veri['current_qty']}/{veri['target_qty']}",
+                    "Durum": durum_gosterim,
+                    "Aktif İş": veri["id"] if veri["id"] else "-",
+                    "Adet": f"{veri['current_qty']}/{veri['target_qty']}" if veri["id"] else "-",
                     "Çalışma (Dk)": round(w_time / 60, 1),
                     "Mola/Duruş (Dk)": round(b_time / 60, 1),
                     "Kalite Bekleme (Dk)": round(q_time / 60, 1)
@@ -235,17 +260,36 @@ else:
 
         with tab2:
             st.subheader("Yeni İş Emri Gönder")
+            
+            # Kayıtlı Şablonlardan Seçim
+            sablonlar = ["-- Yeni (Boş) Form --"] + [f"{t['wo_id']} (SN: {t['sn_id']})" for t in db.get("work_order_templates", [])]
+            secilen_sablon = st.selectbox("Geçmiş İş Emirlerinden Seç (Hızlı Doldur):", sablonlar)
+            
+            def_wo = ""
+            def_sn = ""
+            if secilen_sablon != "-- Yeni (Boş) Form --":
+                for t in db["work_order_templates"]:
+                    if f"{t['wo_id']} (SN: {t['sn_id']})" == secilen_sablon:
+                        def_wo = t['wo_id']
+                        def_sn = t['sn_id']
+                        break
+            
+            st.markdown("---")
             c1, c2 = st.columns(2)
             with c1:
-                hedef_istasyon = st.selectbox("İstasyon:", ["Montaj-1", "Montaj-2", "Montaj-3"])
-                wo_id = st.text_input("İş Emri Numarası:", value="WO-2024-100")
-                sn_id = st.text_input("Seri No Başlangıcı:", value="SN-123456")
-                hedef_sayi = st.number_input("Hedef Adet:", min_value=1, value=50)
+                hedef_istasyon = st.selectbox("İstasyon Seçiniz:", ["Montaj-1", "Montaj-2", "Montaj-3"])
+                wo_id = st.text_input("İş Emri Numarası:", value=def_wo, placeholder="Örn: WO-2026-101")
+                sn_id = st.text_input("Seri No Başlangıcı:", value=def_sn, placeholder="Örn: SN-001")
+                hedef_sayi = st.number_input("Hedef Adet:", min_value=1, value=1)
                 
                 st.markdown("---")
-                is_urgent = st.checkbox("🚨 ACİL İŞ EMRİ (Operatöre uyarı gider, isterse anında geçebilir)")
+                is_urgent = st.checkbox("🚨 ACİL İŞ EMRİ (Operatöre uyarı gider, mevcut iş askıya alınır)")
                 
                 if st.button("🚀 İş Emrini Gönder", type="primary", use_container_width=True):
+                    # Şablonu Kaydet
+                    if wo_id != "" and not any(t["wo_id"] == wo_id for t in db["work_order_templates"]):
+                        db["work_order_templates"].append({"wo_id": wo_id, "sn_id": sn_id})
+
                     hedef_veri = db["stations"][hedef_istasyon]
                     
                     if is_urgent:
@@ -258,6 +302,7 @@ else:
                         hedef_veri["urgent_alert"] = True
                         st.success(f"Acil İş Emri {hedef_istasyon} personeline bildirildi!")
                     else:
+                        stop_timers(hedef_veri) # Varsa mola sayacını falan durdur
                         db["stations"][hedef_istasyon] = {
                             "status": "Onay Bekliyor", "id": wo_id, "sn": sn_id, "target_qty": hedef_sayi,
                             "current_qty": 1, "step": 1, "work_time": 0.0, "break_time": 0.0, "qc_wait_time": 0.0,
@@ -270,7 +315,7 @@ else:
                     st.rerun()
 
         with tab3:
-            st.subheader("Anlık/Aktif Hata Bildirimleri")
+            st.subheader("Geçmiş ve Okunmuş Hata Kayıtları")
             if db["errors"]:
                 for hata in reversed(db["errors"]):
                     with st.container(border=True):
@@ -289,7 +334,6 @@ else:
             if db["completed_jobs"]:
                 sicil_data = []
                 for job in reversed(db["completed_jobs"]):
-                    # Bu iş emri için hata var mı kontrol et
                     hatalar = [e for e in db["errors"] if e["İş Emri"] == job["id"] and e["İstasyon"] == job["station"]]
                     hata_durumu = "VAR ⚠️" if hatalar else "Yok ✅"
                     hata_notu = " | ".join([e["Açıklama"] for e in hatalar]) if hatalar else "-"
@@ -299,6 +343,7 @@ else:
                         "İstasyon (Personel)": job["station"],
                         "İş Emri": job["id"],
                         "Ürün SN": job["sn"],
+                        "Tamamlanan": f"{job['target_qty']} Adet",
                         "Hata Kaydı": hata_durumu,
                         "Hata Açıklaması": hata_notu
                     })
@@ -327,7 +372,7 @@ else:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("⚡ HEMEN GEÇ (Mevcut İşi Askıya Al)", type="primary", use_container_width=True):
-                    # Mevcut işi durdur ve askıya al
+                    # Mevcut işi durdur ve askıya al (Eğer iş varsa)
                     if ist["id"] != "":
                         stop_timers(ist)
                         ist["suspended_job"] = {
@@ -336,7 +381,7 @@ else:
                             "work_time": ist["work_time"], "break_time": ist["break_time"], 
                             "qc_wait_time": ist["qc_wait_time"]
                         }
-                    # Acil işi ana ekrana çek
+                    
                     p = ist["pending_urgent_job"]
                     ist["id"], ist["sn"], ist["target_qty"] = p["id"], p["sn"], p["target_qty"]
                     ist["current_qty"], ist["step"] = 1, 1
@@ -379,23 +424,39 @@ else:
                     st.rerun()
                 st.divider()
 
-            # ÜST BİLGİ BARI VE DEV SÜRE SAYACI
-            if durum not in ["Bekliyor", "Tamamlandı", "Onay Bekliyor"]:
-                col_info1, col_info2 = st.columns([2, 1])
-                with col_info1:
-                    st.markdown(f"""
-                        <div style='background-color: #f1f3f5; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
-                            <strong style='font-size: 20px;'>Ürün: {ist['sn']} | İş Emri: {ist['id']}</strong><br>
-                            <strong style='font-size: 20px;'>Adet: {ist['current_qty']} / {ist['target_qty']}</strong>
-                        </div>
-                    """, unsafe_allow_html=True)
-                with col_info2:
-                    # SÜRE SAYACI BURADA BÜYÜK VE NET
-                    st.markdown(f"<div class='timer-box'>⏱️ {format_time(get_live_work_time(aktif_rol))}</div>", unsafe_allow_html=True)
+            # ÜST BİLGİ BARI VE DEV SÜRE SAYACI (Streamlit Columns ile düzeltildi)
+            if durum not in ["Bekliyor", "Boşta Mola", "Tamamlandı", "Onay Bekliyor"]:
+                col_i1, col_i2, col_i3 = st.columns(3)
+                col_i1.info(f"📦 **Ürün:** {ist['sn']} \n\n 🏷️ **İş Emri:** {ist['id']}")
+                col_i2.warning(f"🎯 **Adet İlerlemesi:** \n\n {ist['current_qty']} / {ist['target_qty']}")
+                col_i3.error(f"⏱️ **Çalışma Süresi:** \n\n {format_time(get_live_work_time(aktif_rol))}")
+                st.markdown("<br>", unsafe_allow_html=True)
             
-            if durum == "Bekliyor":
-                st.markdown("<div class='kiosk-card'><div class='kiosk-title'>☕ BEKLEMEDE</div><div class='kiosk-subtitle'>Yeni iş emri bekleniyor...</div></div>", unsafe_allow_html=True)
-                
+            # --- DURUMLAR ---
+            if durum == "Bekliyor" or durum == "Boşta Mola":
+                if durum == "Bekliyor":
+                    st.markdown("<div class='kiosk-card'><div class='kiosk-title'>☕ BEKLEMEDE</div><div class='kiosk-subtitle'>Yeni iş emri bekleniyor...</div></div>", unsafe_allow_html=True)
+                    
+                    with st.popover("☕ DURUŞ / MOLA BİLDİR (İşsiz)", use_container_width=True):
+                        mola_sebebi = st.selectbox("Duruş Sebebi Seçiniz:", ["Mola (Yemek)", "Mola (Çay)", "Toplantı", "Diğer"])
+                        if st.button("Duruşa Geç", type="primary"):
+                            ist["last_break_start"] = time.time()
+                            ist["break_reason"] = mola_sebebi
+                            ist["status"] = "Boşta Mola"
+                            save_db(db)
+                            st.rerun()
+                else: # Boşta Mola
+                    st.markdown(f"<div class='kiosk-card' style='border: 3px solid #dc3545;'><div class='kiosk-title' style='color:#dc3545;'>⏸️ DURUŞTA ({ist['break_reason']})</div><div class='kiosk-subtitle'>Süreniz sayılıyor. İş emri bekleniyor...</div></div>", unsafe_allow_html=True)
+                    if st.button("▶️ MOLAYI BİTİR (Beklemeye Dön)", type="primary", use_container_width=True):
+                        if ist["last_break_start"]:
+                            ist["break_time"] += time.time() - ist["last_break_start"]
+                        ist["last_break_start"] = None
+                        ist["status"] = "Bekliyor"
+                        ist["break_reason"] = ""
+                        save_db(db)
+                        st.rerun()
+
+                # Eğer askıda iş varsa
                 if ist.get("suspended_job"):
                     st.info("📌 Daha önceden yarım kalan (askıya alınan) bir işiniz var.")
                     if st.button("Askıdaki İşe Geri Dön", use_container_width=True):
@@ -457,7 +518,7 @@ else:
                     c1, c2, c3 = st.columns([1, 2, 1])
                     with c2:
                         if step == 3: 
-                            st.error("🔒 KALİTE ONAYI GEREKİYOR")
+                            st.error("🔒 KALİTE ONAYI GEREKİYOR (Kalite birimine bildirim gitti)")
                             qc_pass = st.text_input("Kalite Şifresi:", type="password")
                             if st.button("✔️ ONAYLA VE GEÇ", type="primary", use_container_width=True):
                                 if qc_pass == USERS["kalite1"]["pass"]:
@@ -489,7 +550,8 @@ else:
                             db["performance"][aktif_rol]["tamamlanan_is_emri"] += 1
                             
                             db["completed_jobs"].append({
-                                "id": ist["id"], "sn": ist["sn"], "station": aktif_rol, "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+                                "id": ist["id"], "sn": ist["sn"], "station": aktif_rol, 
+                                "date": datetime.now().strftime("%Y-%m-%d %H:%M"), "target_qty": ist["target_qty"]
                             })
                         save_db(db)
                         st.rerun()
@@ -547,7 +609,6 @@ else:
                     if st.button("Hatayı Yöneticiye Gönder", type="primary", use_container_width=True):
                         if hata_bolgesi != "Seçilmedi" and hata_aciklama != "":
                             foto_base64 = base64.b64encode(foto.read()).decode("utf-8") if foto else None
-                            
                             hedef_is_id = secilen_is_emri.split(":")[1].split(" ")[1] if "Aktif" in secilen_is_emri else secilen_is_emri.split(":")[1].split(" - ")[0].strip()
                             
                             db["errors"].append({
@@ -559,7 +620,8 @@ else:
                                 "Onceden_Hatali": onceden_hatali,
                                 "Bölge": hata_bolgesi,
                                 "Açıklama": hata_aciklama,
-                                "Foto_Base64": foto_base64
+                                "Foto_Base64": foto_base64,
+                                "is_new": True # YENİ HATA BAYRAĞI
                             })
                             save_db(db)
                             st.success("Hata ve detaylar başarıyla yöneticiye iletildi!")
