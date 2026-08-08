@@ -216,6 +216,9 @@ else:
                     with col_err1:
                         st.markdown(f"**{h['İstasyon']}** - {h['Hatali_Adim']} adımında hata bildirdi! (Bölge: {h['Bölge']})")
                         st.write(f"**Açıklama:** {h['Açıklama']}")
+                        # YENİ EKLENDİ: Yönetici uyarıları kısmında fotoğrafı gösterir
+                        if h.get("Foto_Base64"):
+                            st.image(base64.b64decode(h["Foto_Base64"]), width=350)
                     with col_err2:
                         if st.button("Görüldü / Kapat", key=f"ok_{i}", type="primary"):
                             h["is_new"] = False
@@ -385,6 +388,9 @@ else:
                         st.markdown(f"**{hata['İstasyon']}** | {hata['Tarih/Saat']} | İş Emri: {hata['İş Emri']}")
                         st.write(f"**Dönem:** {hata['Montaj_Donemi']} | **Bölge:** {hata['Bölge']}")
                         st.write(f"**Açıklama:** {hata['Açıklama']}")
+                        # YENİ EKLENDİ: Tüm geçmiş hata kayıtları kısmında fotoğrafı gösterir
+                        if hata.get("Foto_Base64"):
+                            st.image(base64.b64decode(hata["Foto_Base64"]), width=350)
             else:
                 st.write("Kayıtlı hata bulunmuyor.")
                 
@@ -585,7 +591,7 @@ else:
                     c1, c2, c3 = st.columns([1, 2, 1])
                     with c2:
                         if step == 3: 
-                            st.error("🔒 KALİTE ONAYI GEREKİYOR")
+                            st.error("🔒 KALİTE ONAYI GEREKİYOR (Kalite birimine bildirim gitti)")
                             qc_pass = st.text_input("Kalite Şifresi:", type="password", key=f"qc_pass_{ist['id']}_{ist['current_qty']}")
                             
                             if st.button("✔️ ONAYLA VE GEÇ", type="primary", use_container_width=True):
@@ -623,20 +629,19 @@ else:
                         save_db(db)
                         st.rerun()
             
-            # --- ALT İŞLEM BUTONLARI (SADECE BİR KERE YAZILIR) ---
+            # --- OPERATÖR ALT MENÜLER: DURUŞ VE HATA BİLDİRİMİ ---
             st.divider()
-            op_c1, op_c2 = st.columns(2)
             
+            # 1. Duruş ve Aktarım Menüleri (Yan Yana)
+            op_c1, op_c2 = st.columns(2)
             with op_c1:
                 if durum not in ["Duruş", "Boşta Duruş"]:
-                    with st.popover("⏸️ İŞLEMİ DURAKLAT / MOLA BİLDİR", use_container_width=True):
+                    with st.popover("🛑 DURUŞ BİLDİR", use_container_width=True):
                         durus_sebebi = st.selectbox("Sebep Seçiniz:", ["Yemek Molası", "Çay Molası", "Parça Bekleme", "İş Emri Bekleme", "Makine Arızası", "Kalite Kontrol Beklemesi", "Diğer"])
-                        
                         available_jobs = ["Yok / Genel"]
                         if ist["id"]: available_jobs.append(f"Aktif: {ist['id']}")
                         for qj in ist.get("job_queue", []): available_jobs.append(f"Kuyruk: {qj['id']}")
                         for sj in ist.get("suspended_jobs", []): available_jobs.append(f"Askıda: {sj['id']}")
-                        
                         ilgili_is = st.selectbox("İlgili İş Emri:", available_jobs)
                         
                         if st.button("Duruşa Geç", type="primary"):
@@ -667,8 +672,8 @@ else:
                             else:
                                 st.error("Hedef istasyon dolu!")
 
-            # --- TEK VE SABİT HATA BİLDİRİM FORMU ---
-            st.divider()
+            # 2. Sabit ve Tek Hata Bildirim Formu (Aşağıya Sabitlenir)
+            st.write("")
             with st.expander("⚠️ HATA BİLDİR (Aktif veya Geçmiş Montajlar İçin)"):
                 aktif_is_secenegi = f"Aktif İş: {ist['id']} (SN: {ist['sn']})" if ist['id'] != "" else None
                 gecmis_isler = [f"Geçmiş İş: {j['id']} - {j['date']}" for j in db["completed_jobs"] if j["station"] == aktif_rol]
