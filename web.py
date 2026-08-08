@@ -11,18 +11,19 @@ import copy
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Dijital Sis - Kiosk & Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
-# --- MİNİMALİST KIOSK CSS TASARIMI ---
+# --- MİNİMALİST KIOSK CSS TASARIMI (DARK/LIGHT MOD UYUMLU) ---
 st.markdown("""
     <style>
-    .block-container { padding-top: 1rem; font-family: 'Helvetica Neue', sans-serif; }
-    .kiosk-card { background-color: #ffffff; border-radius: 15px; padding: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; margin-bottom: 20px; }
-    .kiosk-title { font-size: 55px; font-weight: 800; color: #1e1e1e; margin-bottom: 10px; }
-    .kiosk-subtitle { font-size: 22px; color: #666; margin-bottom: 30px; }
+    /* Üst menü altında kalmaması için padding-top 4rem yapıldı */
+    .block-container { padding-top: 4rem; font-family: 'Helvetica Neue', sans-serif; }
+    
+    /* Arka plan renkleri sayfa temasıyla otomatik uyumlu hale getirildi */
+    .kiosk-card { border-radius: 15px; padding: 40px; text-align: center; margin-bottom: 20px; border: 2px solid rgba(128, 128, 128, 0.2); }
+    .kiosk-title { font-size: 55px; font-weight: 800; margin-bottom: 10px; }
+    .kiosk-subtitle { font-size: 22px; opacity: 0.7; margin-bottom: 30px; }
     .step-indicator { color: #007bff; font-weight: bold; font-size: 24px; margin-bottom: -10px; }
     .urgent-alert { background-color: #dc3545; color: white; padding: 40px; border-radius: 20px; text-align: center; border: 5px solid #8b0000; margin-top: 20px;}
     .urgent-title { font-size: 60px; font-weight: 900; margin-bottom: 20px; line-height: 1.1;}
-    .new-error-alert { background-color: #fff3cd; color: #856404; padding: 20px; border-left: 10px solid #ffeeba; border-radius: 5px; margin-bottom: 20px; font-size: 20px;}
-    .timer-box { font-size: 35px; font-weight: bold; color: #d9534f; background: #ffebeb; padding: 10px 20px; border-radius: 10px; display: inline-block; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -139,7 +140,7 @@ def stop_timers(istasyon_verisi):
 
 # --- GİRİŞ EKRANI ---
 if not st.session_state.logged_in:
-    st.markdown("<br><br><h1 style='text-align: center; font-size: 70px; color: #1e1e1e;'>DİJİTAL SİS</h1>", unsafe_allow_html=True)
+    st.markdown("<br><br><h1 style='text-align: center; font-size: 70px;'>DİJİTAL SİS</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         with st.container(border=True):
@@ -340,7 +341,6 @@ else:
                         "İstasyon (Personel)": job["station"],
                         "İş Emri": job["id"],
                         "Ürün SN": job["sn"],
-                        # 'get' kullanılarak geriye dönük uyumluluk (KeyError çözümü) eklendi
                         "Tamamlanan": f"{job.get('target_qty', 'Bilinmiyor')} Adet",
                         "Hata Kaydı": hata_durumu,
                         "Hata Açıklaması": hata_notu
@@ -420,11 +420,13 @@ else:
                     st.rerun()
                 st.divider()
 
+            # --- SÜRE VE BİLGİ ALANI (st.metric İLE ÇOK DAHA BÜYÜK VE NET) ---
             if durum not in ["Bekliyor", "Boşta Mola", "Tamamlandı", "Onay Bekliyor"]:
-                col_i1, col_i2, col_i3 = st.columns(3)
-                col_i1.info(f"📦 **Ürün:** {ist['sn']} \n\n 🏷️ **İş Emri:** {ist['id']}")
-                col_i2.warning(f"🎯 **Adet İlerlemesi:** \n\n {ist['current_qty']} / {ist['target_qty']}")
-                col_i3.error(f"⏱️ **Çalışma Süresi:** \n\n {format_time(get_live_work_time(aktif_rol))}")
+                with st.container(border=True):
+                    col_i1, col_i2, col_i3 = st.columns(3)
+                    col_i1.metric("📦 Ürün / İş Emri", f"{ist['sn']} | {ist['id']}")
+                    col_i2.metric("🎯 Adet İlerlemesi", f"{ist['current_qty']} / {ist['target_qty']}")
+                    col_i3.metric("⏱️ Çalışma Süresi", format_time(get_live_work_time(aktif_rol)))
                 st.markdown("<br>", unsafe_allow_html=True)
             
             if durum == "Bekliyor" or durum == "Boşta Mola":
