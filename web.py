@@ -16,32 +16,26 @@ import copy
 
 # =====================================================================
 # 1. SAYFA AYARLARI VE TASARIM (CSS)
-# Bu bölüm uygulamanın tarayıcıdaki sekme adını ve renk/kutu tasarımlarını belirler.
 # =====================================================================
 st.set_page_config(page_title="Dijital Sis - Kiosk & Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
-    /* Ekranın en üst boşluğunu ve genel yazı tipini ayarlar */
     .block-container { padding-top: 4rem; font-family: 'Helvetica Neue', sans-serif; }
-    /* Operatör ekranındaki büyük beyaz bilgi kartlarının tasarımı */
     .kiosk-card { border-radius: 15px; padding: 30px; text-align: center; margin-bottom: 20px; border: 2px solid rgba(128, 128, 128, 0.2); }
     .kiosk-title { font-size: 45px; font-weight: 800; margin-bottom: 10px; }
     .kiosk-subtitle { font-size: 20px; opacity: 0.7; margin-bottom: 20px; }
     .step-indicator { color: #007bff; font-weight: bold; font-size: 24px; margin-bottom: -10px; }
-    /* Acil İş Emri geldiğinde ekranı kaplayan kırmızı uyarının tasarımı */
     .urgent-alert { background-color: #dc3545; color: white; padding: 40px; border-radius: 20px; text-align: center; border: 5px solid #8b0000; margin-top: 20px;}
     </style>
 """, unsafe_allow_html=True)
 
 # =====================================================================
 # 2. VERİTABANI YÖNETİMİ (JSON)
-# Bilgilerin kaydedildiği ve okunduğu db.json dosyasının ayarları
 # =====================================================================
 DB_FILE = "db.json"
 
 def get_empty_station():
-    # Bir istasyonun sıfırlanmış (boş) şablonunu oluşturur.
     return {
         "status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, 
         "work_time": 0.0, "break_time": 0.0, "qc_wait_time": 0.0, "idle_time": 0.0,
@@ -51,7 +45,6 @@ def get_empty_station():
     }
 
 def load_db():
-    # Veritabanını okuyan fonksiyondur. Dosya yoksa default_db şablonu ile sıfırdan oluşturur.
     default_db = {
         "stations": {"Montaj-1": get_empty_station(), "Montaj-2": get_empty_station(), "Montaj-3": get_empty_station()},
         "performance": {
@@ -70,7 +63,6 @@ def load_db():
     with open(DB_FILE, "r", encoding="utf-8") as f:
         db = json.load(f)
         
-    # JSON içinde eksik olan yeni özellikler (Örn: kuyruk sistemi) varsa hata vermemesi için tamamlayan döngüler (for loop).
     updated = False
     for main_key in default_db:
         if main_key not in db:
@@ -101,21 +93,19 @@ def load_db():
     return db
 
 def save_db(data):
-    # Verileri alıp JSON dosyasına kaydeden fonksiyon.
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
 
 db = load_db()
 
 # =====================================================================
-# 3. KULLANICI GİRİŞİ (LOGİN) FONKSİYONLARI
+# 3. KULLANICI GİRİŞİ (LOGİN)
 # =====================================================================
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
 
-# Kullanıcı adı, şifre ve rol tanımlamaları
 USERS = {
     "m1": {"pass": "1234", "role": "Montaj-1"},
     "m2": {"pass": "1234", "role": "Montaj-2"},
@@ -125,49 +115,42 @@ USERS = {
 }
 
 def login(username, password):
-    # Girilen şifrenin doğruluğunu kontrol eder (if/else).
     if username in USERS and USERS[username]["pass"] == password:
         st.session_state.logged_in = True
         st.session_state.username = username
         st.session_state.role = USERS[username]["role"]
-        st.rerun() # Sayfayı yenileyerek sistemi açar
+        st.rerun()
     else:
         st.error("Hatalı giriş!")
 
 def logout():
-    # Sistemden çıkış yapar.
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
     st.rerun()
 
 # =====================================================================
-# 4. KRONOMETRE / SÜRE HESAPLAMA FONKSİYONLARI
+# 4. KRONOMETRE HESAPLAMALARI
 # =====================================================================
 def format_dk_sn(seconds):
-    # Yöneticinin gördüğü "1 dk 15 sn" gibi süre metinlerini oluşturur.
     if seconds <= 0: return "0 dk 0 sn"
     dk = int(seconds // 60)
     sn = int(seconds % 60)
     return f"{dk} dk {sn} sn"
 
 def get_live_work_time(istasyon):
-    # O anki çalışma süresine, başlatılan zamandan bu yana geçen süreyi ekler.
     t = db["stations"][istasyon].get("work_time", 0.0)
     if db["stations"][istasyon]["status"] == "Çalışıyor" and db["stations"][istasyon].get("last_work_start"):
         t += time.time() - db["stations"][istasyon]["last_work_start"]
     return t
 
 def get_live_idle_time(istasyon):
-    # İş bekleme / boşta geçme süresini hesaplar.
     t = db["stations"][istasyon].get("idle_time", 0.0)
     if db["stations"][istasyon]["status"] in ["Bekliyor", "Tamamlandı"] and db["stations"][istasyon].get("last_idle_start"):
         t += time.time() - db["stations"][istasyon]["last_idle_start"]
     return t
 
 def stop_timers(istasyon_verisi):
-    # Montajcının bir işlemden diğerine geçerken sürelerin sıfırlanmaması için 
-    # eski sürenin üzerine yenisini ekler ve sayacı durdurur.
     if istasyon_verisi["status"] == "Çalışıyor" and istasyon_verisi.get("last_work_start"):
         istasyon_verisi["work_time"] = istasyon_verisi.get("work_time", 0.0) + (time.time() - istasyon_verisi["last_work_start"])
         istasyon_verisi["last_work_start"] = None
@@ -184,9 +167,8 @@ def stop_timers(istasyon_verisi):
         istasyon_verisi["idle_time"] = istasyon_verisi.get("idle_time", 0.0) + (time.time() - istasyon_verisi["last_idle_start"])
         istasyon_verisi["last_idle_start"] = None
 
-
 # =====================================================================
-# 5. GİRİŞ (LOGİN) EKRANI ARAYÜZÜ
+# 5. GİRİŞ EKRANI
 # =====================================================================
 if not st.session_state.logged_in:
     st.markdown("<br><br><h1 style='text-align: center; font-size: 70px;'>DİJİTAL SİS</h1>", unsafe_allow_html=True)
@@ -199,12 +181,11 @@ if not st.session_state.logged_in:
                 login(user_input, pass_input)
 
 # =====================================================================
-# 6. SİSTEM İÇİ EKRANLAR (Giriş Yapıldıktan Sonra)
+# 6. SİSTEM İÇİ EKRANLAR
 # =====================================================================
 else:
     aktif_rol = st.session_state.role
     
-    # --- SOL MENÜ (Çıkış Yapma ve Canlı Yenileme Modu) ---
     with st.sidebar:
         st.title(aktif_rol)
         if aktif_rol in ["Yönetici", "Kalite"]:
@@ -212,7 +193,6 @@ else:
         elif aktif_rol in ["Montaj-1", "Montaj-2", "Montaj-3"]:
             durum_kontrol = db["stations"][aktif_rol]["status"]
             urgent_kontrol = db["stations"][aktif_rol]["urgent_alert"]
-            # Form doldururken sayfa yenilenmesin diye akıllı kontrol.
             if (durum_kontrol in ["Bekliyor", "Boşta Duruş", "Tamamlandı"] or urgent_kontrol):
                 canli_mod = st.checkbox("🟢 Sistem Takibi", value=True)
             else:
@@ -227,40 +207,33 @@ else:
     if aktif_rol == "Yönetici":
         st.title("Yönetici Kontrol Paneli")
         
-        # Eğer sahadan yeni bir hata girdisi varsa en üstte devasa alarm olarak çıkarır
         yeni_hatalar = [h for h in db["errors"] if h.get("is_new", True)]
         if yeni_hatalar:
             st.error("🚨 DİKKAT: YENİ HATA BİLDİRİMLERİ VAR!")
-            for i, h in enumerate(yeni_hatalar): # Tüm yeni hataları for döngüsü ile ekrana dizer
+            for i, h in enumerate(yeni_hatalar): 
                 with st.container(border=True):
                     col_err1, col_err2 = st.columns([4, 1])
                     with col_err1:
                         st.markdown(f"**{h['İstasyon']}** - {h['Hatali_Adim']} adımında hata bildirdi! (Bölge: {h['Bölge']})")
                         st.write(f"**Açıklama:** {h['Açıklama']}")
                     with col_err2:
-                        # Görüldüye basılınca "is_new" etiketi False olur ve uyarı silinir.
                         if st.button("Görüldü / Kapat", key=f"ok_{i}", type="primary"):
                             h["is_new"] = False
                             save_db(db)
                             st.rerun()
             st.divider()
         
-        # Tamamlanan iş uyarısı
         tamamlanan_istasyonlar = [ist for ist, veri in db["stations"].items() if veri["status"] == "Tamamlandı"]
         if tamamlanan_istasyonlar:
             st.success(f"🎉 **{', '.join(tamamlanan_istasyonlar)}** iş emrini tamamladı! Yeni iş emri bekliyorlar.")
 
-        # Yöneticinin 4 farklı sekmesi oluşturulur
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Canlı İzleme & Performans", "🚀 İş Emri Ata", "⚠️ Tüm Hata Kayıtları", "🗂️ Geçmiş İşler & Sicil"])
         
-        # --- YÖNETİCİ SEKME 1: CANLI İZLEME ---
         with tab1:
             st.subheader("İzlenebilirlik ve Canlı Takip Tablosu")
-            
             tablo_verisi = []
             adim_isimleri = ["Adım 1", "Adım 2", "Kalite Onayı", "Kapatma"]
             
-            # 3 İstasyonun tüm bilgilerini for döngüsüyle toplar ve listeye atar
             for ist in ["Montaj-1", "Montaj-2", "Montaj-3"]:
                 veri = db["stations"][ist]
                 w_time = get_live_work_time(ist)
@@ -269,7 +242,6 @@ else:
                 q_time = veri.get("qc_wait_time", 0.0)
                 
                 anlik_mola = 0.0
-                # Anlık duruş süresini hesaplar
                 if veri["status"] in ["Duruş", "Boşta Duruş"] and veri.get("last_break_start"):
                     anlik_mola = time.time() - veri["last_break_start"]
                     b_time += anlik_mola 
@@ -279,7 +251,6 @@ else:
                 step_idx = veri.get("step", 1) - 1
                 adim_str = adim_isimleri[step_idx] if step_idx < 4 else "Bitti"
                 
-                # O an istasyonun durumuna göre tabloda yazılacak metni (if komutlarıyla) belirler.
                 durum_gosterim = veri["status"]
                 if veri["status"] == "Çalışıyor":
                     durum_gosterim = f"🟢 Çalışıyor ({adim_str})"
@@ -296,7 +267,6 @@ else:
                 elif veri["status"] == "Duraklatıldı":
                     durum_gosterim = "⏸️ Duraklatıldı"
                     
-                # Bekleyen (kuyrukta olan) toplam iş sayısı
                 toplam_kuyruk = len(veri.get("pending_jobs", [])) + len(veri.get("job_queue", [])) + len(veri.get("suspended_jobs", []))
                 
                 tablo_verisi.append({
@@ -316,8 +286,6 @@ else:
             
             st.subheader("⏱️ İstasyon Toplam Süre Dağılımları")
             pie_c1, pie_c2, pie_c3 = st.columns(3)
-            
-            # Python'un 'plotly' kütüphanesi ile veritabanındaki saniyeleri kullanarak pasta grafiği çizer.
             for index, ist in enumerate(["Montaj-1", "Montaj-2", "Montaj-3"]):
                 with [pie_c1, pie_c2, pie_c3][index]:
                     v = db["stations"][ist]
@@ -348,23 +316,22 @@ else:
                         save_db(db)
                         st.rerun()
 
-        # --- YÖNETİCİ SEKME 2: İŞ EMRİ ATA ---
         with tab2:
             st.subheader("Yeni İş Emri Gönder")
-            # Önceden gönderilen işleri şablon olarak listeye çeker
-            sablonlar = ["-- Yeni (Boş) Form --"] + [f"{t['wo_id']} (SN: {t['sn_id']})" for t in db.get("work_order_templates", [])]
-            secilen_sablon = st.selectbox("Geçmiş İş Emirlerinden Seç (Hızlı Doldur):", sablonlar)
+            col_ata_sol, col_ata_sag = st.columns([2, 1])
             
-            def_wo, def_sn = "", ""
-            if secilen_sablon != "-- Yeni (Boş) Form --":
-                for t in db["work_order_templates"]:
-                    if f"{t['wo_id']} (SN: {t['sn_id']})" == secilen_sablon:
-                        def_wo, def_sn = t['wo_id'], t['sn_id']
-                        break
-            
-            st.markdown("---")
-            c1, c2 = st.columns(2)
-            with c1:
+            with col_ata_sol:
+                sablonlar = ["-- Yeni (Boş) Form --"] + [f"{t['wo_id']} (SN: {t['sn_id']})" for t in db.get("work_order_templates", [])]
+                secilen_sablon = st.selectbox("Geçmiş İş Emirlerinden Seç (Hızlı Doldur):", sablonlar)
+                
+                def_wo, def_sn = "", ""
+                if secilen_sablon != "-- Yeni (Boş) Form --":
+                    for t in db["work_order_templates"]:
+                        if f"{t['wo_id']} (SN: {t['sn_id']})" == secilen_sablon:
+                            def_wo, def_sn = t['wo_id'], t['sn_id']
+                            break
+                
+                st.markdown("---")
                 hedef_istasyon = st.selectbox("İstasyon Seçiniz:", ["Montaj-1", "Montaj-2", "Montaj-3"])
                 wo_id = st.text_input("İş Emri Numarası:", value=def_wo, placeholder="Örn: WO-2026-101")
                 sn_id = st.text_input("Seri No Başlangıcı:", value=def_sn, placeholder="Örn: SN-001")
@@ -372,26 +339,46 @@ else:
                 
                 is_urgent = st.checkbox("🚨 ACİL İŞ EMRİ (Operatöre kırmızı uyarı gider)")
                 
-                if st.button("🚀 İş Emrini Gönder", type="primary", use_container_width=True):
-                    # Gönderilen form şablona eklenir
-                    if wo_id != "" and not any(t["wo_id"] == wo_id for t in db["work_order_templates"]):
-                        db["work_order_templates"].append({"wo_id": wo_id, "sn_id": sn_id})
+                st.markdown("<br>", unsafe_allow_html=True)
+                btn_satir_1, btn_satir_2 = st.columns(2)
+                
+                with btn_satir_1:
+                    # Gönder Butonu (Şablona KESİNLİKLE otomatik kaydetmez)
+                    if st.button("🚀 İş Emrini Gönder", type="primary", use_container_width=True):
+                        hedef_veri = db["stations"][hedef_istasyon]
+                        yeni_is_paketi = {"id": wo_id, "sn": sn_id, "target_qty": hedef_sayi, "current_qty": 1, "step": 1}
+                        
+                        if is_urgent:
+                            hedef_veri["pending_urgent_job"] = yeni_is_paketi
+                            hedef_veri["urgent_alert"] = True
+                            st.success("Acil İş Emri iletildi!")
+                        else:
+                            hedef_veri["pending_jobs"].append(yeni_is_paketi)
+                            st.success("İş Emri personelin onay havuzuna gönderildi.")
+                        save_db(db)
+                        time.sleep(1)
+                        st.rerun()
 
-                    hedef_veri = db["stations"][hedef_istasyon]
-                    yeni_is_paketi = {"id": wo_id, "sn": sn_id, "target_qty": hedef_sayi, "current_qty": 1, "step": 1}
-                    
-                    if is_urgent:
-                        hedef_veri["pending_urgent_job"] = yeni_is_paketi
-                        hedef_veri["urgent_alert"] = True
-                        st.success("Acil İş Emri iletildi!")
-                    else:
-                        hedef_veri["pending_jobs"].append(yeni_is_paketi)
-                        st.success("İş Emri personelin onay havuzuna gönderildi.")
-                    
-                    save_db(db)
-                    st.rerun()
+                with btn_satir_2:
+                    # Kaydet Butonu (Manuel kontrol)
+                    if st.button("💾 Şablon Olarak Kaydet", use_container_width=True):
+                        if wo_id != "" and not any(t["wo_id"] == wo_id for t in db["work_order_templates"]):
+                            db["work_order_templates"].append({"wo_id": wo_id, "sn_id": sn_id})
+                            save_db(db)
+                            st.success("Şablon başarıyla yan tarafa kaydedildi.")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.warning("Bu şablon zaten mevcut veya form boş.")
 
-        # --- YÖNETİCİ SEKME 3: HATA KAYITLARI ---
+            with col_ata_sag:
+                st.markdown("### 📁 Kayıtlı Şablonlar")
+                if len(db.get("work_order_templates", [])) == 0:
+                    st.info("Henüz kayıtlı bir iş emri şablonu yok.")
+                else:
+                    for t in reversed(db["work_order_templates"]):
+                        st.success(f"**İş Emri:** {t['wo_id']}\n\n**Ürün SN:** {t['sn_id']}")
+
         with tab3:
             st.subheader("Geçmiş ve Okunmuş Hata Kayıtları")
             if db["errors"]:
@@ -403,7 +390,6 @@ else:
             else:
                 st.write("Kayıtlı hata bulunmuyor.")
                 
-        # --- YÖNETİCİ SEKME 4: SİCİL ---
         with tab4:
             st.subheader("Geçmiş İşler ve Personel Sicili")
             if db["completed_jobs"]:
@@ -418,7 +404,6 @@ else:
                     })
                 st.dataframe(pd.DataFrame(sicil_data), use_container_width=True)
 
-
     # -----------------------------------------------------------------
     # ROL 2: OPERATÖR EKRANI
     # -----------------------------------------------------------------
@@ -427,7 +412,6 @@ else:
         durum = ist["status"]
         
         # --- OPERATÖR BÖLÜM 1: ACİL DURUM KONTROLÜ ---
-        # Eğer acil bayrağı (True) ise ekranda Kırmızı Uyarı hariç hiçbir şey görünmez.
         if ist.get("urgent_alert"):
             st.markdown(f"""
                 <div class='urgent-alert'>
@@ -462,9 +446,9 @@ else:
                     save_db(db)
                     st.rerun()
                 
-        # --- OPERATÖR BÖLÜM 2: NORMAL İŞLEYİŞ (Acil Durum Yoksa) ---
+        # --- OPERATÖR BÖLÜM 2: NORMAL İŞLEYİŞ ---
         else:
-            # Gelen İşler İçin Onay Kutusu (Sarı Renkli Uyarı)
+            # Gelen İşler İçin Onay Kutusu
             if len(ist.get("pending_jobs", [])) > 0:
                 with st.container(border=True):
                     st.warning(f"📩 Onay bekleyen {len(ist['pending_jobs'])} iş emriniz var!")
@@ -477,7 +461,7 @@ else:
                             save_db(db)
                             st.rerun()
 
-            # Kuyruktaki (Sıradaki) ve Askıdaki (Yarım Kalan) İşler Menüsü
+            # Kuyruktaki ve Askıdaki İşler
             all_queued = ist.get("job_queue", []) + ist.get("suspended_jobs", [])
             if len(all_queued) > 0:
                 with st.expander(f"📋 KUYRUKTAKİ VE ASKIDAKİ İŞLER ({len(all_queued)} Adet)"):
@@ -511,9 +495,7 @@ else:
                             save_db(db)
                             st.rerun()
 
-            # --- HTML VE JAVASCRIPT CANLI SAYAÇ BÖLÜMÜ ---
-            # Python her saniye arayüzü yenilemesin (kasma yapmasın) diye saniye akışı
-            # kullanıcının cihazına (Tarayıcı / JS) yaptırılıyor.
+            # CANLI SAYAÇ BÖLÜMÜ (JS İLE)
             if durum not in ["Bekliyor", "Boşta Duruş", "Tamamlandı"]:
                 with st.container(border=True):
                     col_i1, col_i2, col_i3 = st.columns([2,1,2])
@@ -527,7 +509,6 @@ else:
                         if durum in ["Duruş", "Boşta Duruş"] and ist.get("last_break_start"):
                             b_time += time.time() - ist["last_break_start"]
                             
-                        # HTML ve JS entegrasyonu başlar
                         components.html(
                             f"""
                             <div style="font-family: 'Helvetica Neue', sans-serif; display: flex; gap: 15px; justify-content: center;">
@@ -567,7 +548,7 @@ else:
                         )
                 st.markdown("<br>", unsafe_allow_html=True)
             
-            # --- ANA DURUM KARTLARI (Çalışıyor, Bekliyor, Duruşta vb.) ---
+            # ANA DURUM KARTLARI (Çalışıyor, Duruşta, Bitti)
             if durum == "Bekliyor" or durum == "Boşta Duruş":
                 if durum == "Bekliyor":
                     st.markdown("<div class='kiosk-card'><div class='kiosk-title'>☕ BEKLEMEDE</div><div class='kiosk-subtitle'>Yeni iş emri bekleniyor...</div></div>", unsafe_allow_html=True)
@@ -611,7 +592,10 @@ else:
                     with c2:
                         if step == 3: 
                             st.error("🔒 KALİTE ONAYI GEREKİYOR (Kalite birimine bildirim gitti)")
-                            qc_pass = st.text_input("Kalite Şifresi:", type="password")
+                            # DİNAMİK KEY: Ürün adedi değiştikçe bu kutu kendini sıfırlar. Şifre kayıtlı kalmaz!
+                            dinamik_anahtar = f"qc_pass_{ist['id']}_{ist['current_qty']}"
+                            qc_pass = st.text_input("Kalite Şifresi:", type="password", key=dinamik_anahtar)
+                            
                             if st.button("✔️ ONAYLA VE GEÇ", type="primary", use_container_width=True):
                                 if qc_pass == USERS["kalite1"]["pass"]:
                                     if ist.get("qc_req_time"): ist["qc_wait_time"] = ist.get("qc_wait_time", 0.0) + (time.time() - ist["qc_req_time"])
@@ -647,12 +631,13 @@ else:
                         save_db(db)
                         st.rerun()
             
-            # --- OPERATÖR ALT MENÜ: DURUŞ VE İŞ AKTARMA ---
+            # --- TEK VE SABİT OPERATÖR ALT MENÜSÜ ---
+            # İç içe if/else döngülerinin dışına alınarak "yankılanma" kökünden çözüldü.
             st.divider()
             op_c1, op_c2 = st.columns(2)
             
             with op_c1:
-                # Operatör zaten duruştayken menü tekrar görünmesin (Çift buton hatasını önler)
+                # Zaten duruşta değilse duruş bildirimi açılır
                 if durum not in ["Duruş", "Boşta Duruş"]:
                     with st.popover("🛑 DURUŞ BİLDİR", use_container_width=True):
                         durus_sebebi = st.selectbox("Sebep Seçiniz:", ["Yemek Molası", "Çay Molası", "Parça Bekleme", "İş Emri Bekleme", "Makine Arızası", "Kalite Kontrol Beklemesi", "Diğer"])
@@ -673,7 +658,7 @@ else:
                             st.rerun()
                             
             with op_c2:
-                # Elinde iş olmayan (Boşta / Bekliyor) biri iş aktaramaz
+                # İş olmayan durumlar hariç iş aktarma menüsü açılır
                 if durum not in ["Bekliyor", "Boşta Duruş", "Tamamlandı"]:
                     with st.popover("🔄 İŞİ BAŞKA İSTASYONA AKTAR", use_container_width=True):
                         hedef = st.selectbox("Hedef İstasyon:", [s for s in ["Montaj-1", "Montaj-2", "Montaj-3"] if s != aktif_rol])
@@ -693,7 +678,6 @@ else:
                             else:
                                 st.error("Hedef istasyon dolu!")
 
-            # --- OPERATÖR HATA BİLDİRİM FORMU (Sabit tek menü) ---
             st.divider()
             with st.expander("⚠️ HATA BİLDİR (Aktif veya Geçmiş Montajlar İçin)"):
                 aktif_is_secenegi = f"Aktif İş: {ist['id']} (SN: {ist['sn']})" if ist['id'] != "" else None
@@ -741,7 +725,6 @@ else:
         else:
             st.success("✅ Bekleyen onay yok.")
 
-    # Arayüzün canlı kalması için her 3 saniyede bir sayfayı yeniler
     if canli_mod:
         time.sleep(3)
         st.rerun()
