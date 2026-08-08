@@ -343,7 +343,6 @@ else:
                 btn_satir_1, btn_satir_2 = st.columns(2)
                 
                 with btn_satir_1:
-                    # Gönder Butonu (Şablona KESİNLİKLE otomatik kaydetmez)
                     if st.button("🚀 İş Emrini Gönder", type="primary", use_container_width=True):
                         hedef_veri = db["stations"][hedef_istasyon]
                         yeni_is_paketi = {"id": wo_id, "sn": sn_id, "target_qty": hedef_sayi, "current_qty": 1, "step": 1}
@@ -360,7 +359,6 @@ else:
                         st.rerun()
 
                 with btn_satir_2:
-                    # Kaydet Butonu (Manuel kontrol)
                     if st.button("💾 Şablon Olarak Kaydet", use_container_width=True):
                         if wo_id != "" and not any(t["wo_id"] == wo_id for t in db["work_order_templates"]):
                             db["work_order_templates"].append({"wo_id": wo_id, "sn_id": sn_id})
@@ -448,7 +446,6 @@ else:
                 
         # --- OPERATÖR BÖLÜM 2: NORMAL İŞLEYİŞ ---
         else:
-            # Gelen İşler İçin Onay Kutusu
             if len(ist.get("pending_jobs", [])) > 0:
                 with st.container(border=True):
                     st.warning(f"📩 Onay bekleyen {len(ist['pending_jobs'])} iş emriniz var!")
@@ -461,7 +458,6 @@ else:
                             save_db(db)
                             st.rerun()
 
-            # Kuyruktaki ve Askıdaki İşler
             all_queued = ist.get("job_queue", []) + ist.get("suspended_jobs", [])
             if len(all_queued) > 0:
                 with st.expander(f"📋 KUYRUKTAKİ VE ASKIDAKİ İŞLER ({len(all_queued)} Adet)"):
@@ -495,7 +491,6 @@ else:
                             save_db(db)
                             st.rerun()
 
-            # CANLI SAYAÇ BÖLÜMÜ (JS İLE)
             if durum not in ["Bekliyor", "Boşta Duruş", "Tamamlandı"]:
                 with st.container(border=True):
                     col_i1, col_i2, col_i3 = st.columns([2,1,2])
@@ -548,7 +543,6 @@ else:
                         )
                 st.markdown("<br>", unsafe_allow_html=True)
             
-            # ANA DURUM KARTLARI (Çalışıyor, Duruşta, Bitti)
             if durum == "Bekliyor" or durum == "Boşta Duruş":
                 if durum == "Bekliyor":
                     st.markdown("<div class='kiosk-card'><div class='kiosk-title'>☕ BEKLEMEDE</div><div class='kiosk-subtitle'>Yeni iş emri bekleniyor...</div></div>", unsafe_allow_html=True)
@@ -591,10 +585,8 @@ else:
                     c1, c2, c3 = st.columns([1, 2, 1])
                     with c2:
                         if step == 3: 
-                            st.error("🔒 KALİTE ONAYI GEREKİYOR (Kalite birimine bildirim gitti)")
-                            # DİNAMİK KEY: Ürün adedi değiştikçe bu kutu kendini sıfırlar. Şifre kayıtlı kalmaz!
-                            dinamik_anahtar = f"qc_pass_{ist['id']}_{ist['current_qty']}"
-                            qc_pass = st.text_input("Kalite Şifresi:", type="password", key=dinamik_anahtar)
+                            st.error("🔒 KALİTE ONAYI GEREKİYOR")
+                            qc_pass = st.text_input("Kalite Şifresi:", type="password", key=f"qc_pass_{ist['id']}_{ist['current_qty']}")
                             
                             if st.button("✔️ ONAYLA VE GEÇ", type="primary", use_container_width=True):
                                 if qc_pass == USERS["kalite1"]["pass"]:
@@ -631,15 +623,13 @@ else:
                         save_db(db)
                         st.rerun()
             
-            # --- TEK VE SABİT OPERATÖR ALT MENÜSÜ ---
-            # İç içe if/else döngülerinin dışına alınarak "yankılanma" kökünden çözüldü.
+            # --- ALT İŞLEM BUTONLARI (SADECE BİR KERE YAZILIR) ---
             st.divider()
             op_c1, op_c2 = st.columns(2)
             
             with op_c1:
-                # Zaten duruşta değilse duruş bildirimi açılır
                 if durum not in ["Duruş", "Boşta Duruş"]:
-                    with st.popover("🛑 DURUŞ BİLDİR", use_container_width=True):
+                    with st.popover("⏸️ İŞLEMİ DURAKLAT / MOLA BİLDİR", use_container_width=True):
                         durus_sebebi = st.selectbox("Sebep Seçiniz:", ["Yemek Molası", "Çay Molası", "Parça Bekleme", "İş Emri Bekleme", "Makine Arızası", "Kalite Kontrol Beklemesi", "Diğer"])
                         
                         available_jobs = ["Yok / Genel"]
@@ -658,7 +648,6 @@ else:
                             st.rerun()
                             
             with op_c2:
-                # İş olmayan durumlar hariç iş aktarma menüsü açılır
                 if durum not in ["Bekliyor", "Boşta Duruş", "Tamamlandı"]:
                     with st.popover("🔄 İŞİ BAŞKA İSTASYONA AKTAR", use_container_width=True):
                         hedef = st.selectbox("Hedef İstasyon:", [s for s in ["Montaj-1", "Montaj-2", "Montaj-3"] if s != aktif_rol])
@@ -678,6 +667,7 @@ else:
                             else:
                                 st.error("Hedef istasyon dolu!")
 
+            # --- TEK VE SABİT HATA BİLDİRİM FORMU ---
             st.divider()
             with st.expander("⚠️ HATA BİLDİR (Aktif veya Geçmiş Montajlar İçin)"):
                 aktif_is_secenegi = f"Aktif İş: {ist['id']} (SN: {ist['sn']})" if ist['id'] != "" else None
