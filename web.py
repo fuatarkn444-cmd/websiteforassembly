@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import time
 import json
@@ -11,13 +12,10 @@ import copy
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Dijital Sis - Kiosk & Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
-# --- MİNİMALİST KIOSK CSS TASARIMI (DARK/LIGHT MOD UYUMLU) ---
+# --- MİNİMALİST KIOSK CSS TASARIMI ---
 st.markdown("""
     <style>
-    /* Üst menü altında kalmaması için padding-top 4rem yapıldı */
     .block-container { padding-top: 4rem; font-family: 'Helvetica Neue', sans-serif; }
-    
-    /* Arka plan renkleri sayfa temasıyla otomatik uyumlu hale getirildi */
     .kiosk-card { border-radius: 15px; padding: 40px; text-align: center; margin-bottom: 20px; border: 2px solid rgba(128, 128, 128, 0.2); }
     .kiosk-title { font-size: 55px; font-weight: 800; margin-bottom: 10px; }
     .kiosk-subtitle { font-size: 22px; opacity: 0.7; margin-bottom: 30px; }
@@ -163,7 +161,7 @@ else:
             if (durum_kontrol in ["Bekliyor", "Boşta Mola", "Onay Bekliyor", "Tamamlandı"] or durum_kontrol == "Acil Bekliyor") and not urgent_kontrol:
                 canli_mod = st.checkbox("🟢 Sistem Takibi", value=True)
             else:
-                canli_mod = st.checkbox("🟢 Çalışma Modu (Süreyi İzle)", value=True)
+                canli_mod = st.checkbox("🟢 Arkaplan Senkronizasyonu", value=True)
         st.divider()
         if st.button("🚪 Çıkış Yap", use_container_width=True):
             logout()
@@ -383,8 +381,8 @@ else:
                     ist["id"], ist["sn"], ist["target_qty"] = p["id"], p["sn"], p["target_qty"]
                     ist["current_qty"], ist["step"] = 1, 1
                     ist["work_time"], ist["break_time"], ist["qc_wait_time"] = 0.0, 0.0, 0.0
-                    ist["status"] = "Çalışıyor"
-                    ist["last_work_start"] = time.time()
+                    ist["status"] = "Onay Bekliyor"
+                    ist["last_work_start"] = None
                     
                     ist["urgent_alert"] = False
                     ist["pending_urgent_job"] = None
@@ -413,20 +411,50 @@ else:
                     ist["id"], ist["sn"], ist["target_qty"] = p["id"], p["sn"], p["target_qty"]
                     ist["current_qty"], ist["step"] = 1, 1
                     ist["work_time"], ist["break_time"], ist["qc_wait_time"] = 0.0, 0.0, 0.0
-                    ist["status"] = "Çalışıyor"
-                    ist["last_work_start"] = time.time()
+                    ist["status"] = "Onay Bekliyor"
+                    ist["last_work_start"] = None
                     ist["pending_urgent_job"] = None
                     save_db(db)
                     st.rerun()
                 st.divider()
 
-            # --- SÜRE VE BİLGİ ALANI (st.metric İLE ÇOK DAHA BÜYÜK VE NET) ---
+            # --- SÜRE VE BİLGİ ALANI (CANLI JS SAYAÇ İLE) ---
             if durum not in ["Bekliyor", "Boşta Mola", "Tamamlandı", "Onay Bekliyor"]:
                 with st.container(border=True):
                     col_i1, col_i2, col_i3 = st.columns(3)
                     col_i1.metric("📦 Ürün / İş Emri", f"{ist['sn']} | {ist['id']}")
                     col_i2.metric("🎯 Adet İlerlemesi", f"{ist['current_qty']} / {ist['target_qty']}")
-                    col_i3.metric("⏱️ Çalışma Süresi", format_time(get_live_work_time(aktif_rol)))
+                    
+                    with col_i3:
+                        is_active = "true" if durum == "Çalışıyor" else "false"
+                        components.html(
+                            f"""
+                            <div style="font-family: 'Helvetica Neue', sans-serif; text-align: center;">
+                                <div style="font-size: 14px; color: #555; margin-bottom: 5px;">⏱️ Çalışma Süresi</div>
+                                <div id="timer" style="font-size: 35px; font-weight: bold; color: #d9534f; background: #ffebeb; padding: 10px 20px; border-radius: 10px; display: inline-block;">
+                                    00:00:00
+                                </div>
+                            </div>
+                            <script>
+                                var totalSeconds = {int(get_live_work_time(aktif_rol))};
+                                var isActive = {is_active};
+                                function formatTime(sec) {{
+                                    var h = Math.floor(sec / 3600).toString().padStart(2, '0');
+                                    var m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
+                                    var s = Math.floor(sec % 60).toString().padStart(2, '0');
+                                    return h + ":" + m + ":" + s;
+                                }}
+                                document.getElementById('timer').innerHTML = formatTime(totalSeconds);
+                                if (isActive) {{
+                                    setInterval(function() {{
+                                        totalSeconds++;
+                                        document.getElementById('timer').innerHTML = formatTime(totalSeconds);
+                                    }}, 1000);
+                                }}
+                            </script>
+                            """,
+                            height=100
+                        )
                 st.markdown("<br>", unsafe_allow_html=True)
             
             if durum == "Bekliyor" or durum == "Boşta Mola":
@@ -513,7 +541,7 @@ else:
                     c1, c2, c3 = st.columns([1, 2, 1])
                     with c2:
                         if step == 3: 
-                            st.error("🔒 KALİTE ONAYI GEREKİYOR (Kalite birimine bildirim gitti)")
+                            st.error("🔒 KALİTE ONAYI GEREKİYOR")
                             qc_pass = st.text_input("Kalite Şifresi:", type="password")
                             if st.button("✔️ ONAYLA VE GEÇ", type="primary", use_container_width=True):
                                 if qc_pass == USERS["kalite1"]["pass"]:
