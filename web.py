@@ -1,8 +1,3 @@
-# =====================================================================
-# DİJİTAL SİS - MONTAJ TAKİP SİSTEMİ
-# Diller: Python (Ana Mantık), CSS (Görsellik), JavaScript (Canlı Sayaç)
-# =====================================================================
-
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
