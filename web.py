@@ -35,7 +35,8 @@ def get_empty_station():
         "status": "Bekliyor", "id": "", "sn": "", "target_qty": 0, "current_qty": 0, "step": 1, 
         "work_time": 0.0, "break_time": 0.0, "qc_wait_time": 0.0, "idle_time": 0.0,
         "last_work_start": None, "last_break_start": None, "qc_req_time": None, "last_idle_start": time.time(),
-        "break_reason": "", "urgent_alert": False, "suspended_job": None, "pending_urgent_job": None
+        "break_reason": "", "urgent_alert": False, "suspended_job": None, "pending_urgent_job": None,
+        "job_queue": [] # YENİ: Arkada bekletilen işler listesi
     }
 
 def load_db():
@@ -217,13 +218,13 @@ else:
                 i_time = get_live_idle_time(ist)
                 b_time = veri.get("break_time", 0.0)
                 q_time = veri.get("qc_wait_time", 0.0)
+                kuyruk_sayisi = len(veri.get("job_queue", []))
                 
                 if veri["status"] in ["Mola", "Boşta Mola"] and veri.get("last_break_start"):
                     b_time += time.time() - veri["last_break_start"]
                 if veri.get("qc_req_time"):
                     q_time += time.time() - veri["qc_req_time"]
                     
-                # Durum Detaylandırma
                 step_idx = veri.get("step", 1) - 1
                 adim_str = adim_isimleri[step_idx] if step_idx < 4 else "Bitti"
                 
@@ -237,7 +238,7 @@ else:
                 elif veri["status"] == "Bekliyor":
                     durum_gosterim = "🟡 İş Emri Bekliyor"
                 elif veri["status"] == "Tamamlandı":
-                    durum_gosterim = "✅ İş Bitti (İş Bekliyor)"
+                    durum_gosterim = "✅ İş Bitti (Yeni İş Bekliyor)"
                 elif veri["status"] in ["Onay Bekliyor", "Acil Bekliyor"]:
                     durum_gosterim = "🟠 Operatör Onayı Bekliyor"
                 elif veri["status"] == "Duraklatıldı":
@@ -247,6 +248,7 @@ else:
                     "İstasyon": ist,
                     "Anlık Durum": durum_gosterim,
                     "Aktif İş": veri["id"] if veri["id"] else "-",
+                    "Kuyruktaki İş": kuyruk_sayisi,
                     "Adet": f"{veri['current_qty']}/{veri['target_qty']}" if veri["id"] else "-",
                     "Çalışma (Dk)": round(w_time / 60, 1),
                     "Duruş/Mola (Dk)": round(b_time / 60, 1),
@@ -323,26 +325,36 @@ else:
                         db["work_order_templates"].append({"wo_id": wo_id, "sn_id": sn_id})
 
                     hedef_veri = db["stations"][hedef_istasyon]
+                    yeni_is_paketi = {
+                        "id": wo_id, "sn": sn_id, "target_qty": hedef_sayi,
+                        "current_qty": 1, "step": 1, "work_time": 0.0, "break_time": 0.0, "qc_wait_time": 0.0
+                    }
                     
                     if is_urgent:
-                        hedef_veri["pending_urgent_job"] = {
-                            "id": wo_id, "sn": sn_id, "target_qty": hedef_sayi,
-                            "current_qty": 1, "step": 1, "work_time": 0.0, "break_time": 0.0, "qc_wait_time": 0.0,
-                            "idle_time": 0.0, "last_work_start": None, "last_break_start": None, "qc_req_time": None, 
-                            "last_idle_start": None, "break_reason": "", "status": "Acil Bekliyor"
-                        }
+                        hedef_veri["pending_urgent_job"] = yeni_is_paketi
+                        hedef_veri["pending_urgent_job"]["status"] = "Acil Bekliyor"
                         hedef_veri["urgent_alert"] = True
                         st.success(f"Acil İş Emri {hedef_istasyon} personeline bildirildi!")
                     else:
-                        stop_timers(hedef_veri)
-                        db["stations"][hedef_istasyon] = {
-                            "status": "Onay Bekliyor", "id": wo_id, "sn": sn_id, "target_qty": hedef_sayi,
-                            "current_qty": 1, "step": 1, "work_time": 0.0, "break_time": 0.0, "qc_wait_time": 0.0,
-                            "idle_time": hedef_veri.get("idle_time", 0.0), # Korunur
-                            "last_work_start": None, "last_break_start": None, "qc_req_time": None, "last_idle_start": None,
-                            "break_reason": "", "urgent_alert": False, "suspended_job": None, "pending_urgent_job": None
-                        }
-                        st.success(f"Normal İş Emri {hedef_istasyon} istasyonuna gönderildi.")
+                        # Eğer istasyon boşsa direkt ata
+                        if hedef_veri["id"] == "" or hedef_veri["status"] in ["Bekliyor", "Tamamlandı"]:
+                            stop_timers(hedef_veri)
+                            hedef_veri["status"] = "Onay Bekliyor"
+                            hedef_veri["id"] = wo_id
+                            hedef_veri["sn"] = sn_id
+                            hedef_veri["target_qty"] = hedef_sayi
+                            hedef_veri["current_qty"] = 1
+                            hedef_veri["step"] = 1
+                            hedef_veri["work_time"] = 0.0
+                            hedef_veri["break_time"] = 0.0
+                            hedef_veri["qc_wait_time"] = 0.0
+                            hedef_veri["last_work_start"] = None
+                            hedef_veri["last_break_start"] = None
+                            st.success(f"Normal İş Emri {hedef_istasyon} istasyonuna gönderildi.")
+                        else:
+                            # İstasyon dolu, KUYRUĞA EKLE
+                            hedef_veri["job_queue"].append(yeni_is_paketi)
+                            st.info(f"Personel şu an meşgul. İş emri {hedef_istasyon} kuyruğuna eklendi.")
                     
                     save_db(db)
                     st.rerun()
@@ -458,17 +470,20 @@ else:
             # --- SÜRE VE BİLGİ ALANI (CANLI JS SAYAÇ İLE) ---
             if durum not in ["Bekliyor", "Boşta Mola", "Tamamlandı", "Onay Bekliyor"]:
                 with st.container(border=True):
-                    col_i1, col_i2, col_i3 = st.columns(3)
+                    col_i1, col_i2, col_i3, col_i4 = st.columns([2,2,1,1])
                     col_i1.metric("📦 Ürün / İş Emri", f"{ist['sn']} | {ist['id']}")
                     col_i2.metric("🎯 Adet İlerlemesi", f"{ist['current_qty']} / {ist['target_qty']}")
                     
-                    with col_i3:
+                    if len(ist.get("job_queue", [])) > 0:
+                        col_i3.metric("📥 Kuyruktaki İşler", f"{len(ist['job_queue'])} Adet")
+                    
+                    with col_i4:
                         is_active = "true" if durum == "Çalışıyor" else "false"
                         components.html(
                             f"""
                             <div style="font-family: 'Helvetica Neue', sans-serif; text-align: center;">
                                 <div style="font-size: 14px; color: #555; margin-bottom: 5px;">⏱️ Çalışma Süresi</div>
-                                <div id="timer" style="font-size: 35px; font-weight: bold; color: #d9534f; background: #ffebeb; padding: 10px 20px; border-radius: 10px; display: inline-block;">
+                                <div id="timer" style="font-size: 30px; font-weight: bold; color: #d9534f; background: #ffebeb; padding: 5px 10px; border-radius: 10px; display: inline-block;">
                                     00:00:00
                                 </div>
                             </div>
@@ -490,7 +505,7 @@ else:
                                 }}
                             </script>
                             """,
-                            height=100
+                            height=80
                         )
                 st.markdown("<br>", unsafe_allow_html=True)
             
@@ -498,6 +513,20 @@ else:
                 if durum == "Bekliyor":
                     st.markdown("<div class='kiosk-card'><div class='kiosk-title'>☕ BEKLEMEDE</div><div class='kiosk-subtitle'>Yeni iş emri bekleniyor...</div></div>", unsafe_allow_html=True)
                     
+                    # KUYRUKTA İŞ VARSA
+                    if len(ist.get("job_queue", [])) > 0:
+                        st.info(f"📥 Arka planda bekleyen {len(ist['job_queue'])} adet yeni işiniz var.")
+                        if st.button("🚀 SIRADAKİ İŞİ AL VE BAŞLA", type="primary", use_container_width=True):
+                            nj = ist["job_queue"].pop(0)
+                            ist["id"], ist["sn"], ist["target_qty"] = nj["id"], nj["sn"], nj["target_qty"]
+                            ist["current_qty"], ist["step"] = 1, 1
+                            ist["work_time"], ist["break_time"], ist["qc_wait_time"] = 0.0, 0.0, 0.0
+                            ist["status"] = "Onay Bekliyor"
+                            stop_timers(ist) # Idle sayacını sıfırla
+                            save_db(db)
+                            st.rerun()
+
+                    st.divider()
                     with st.popover("☕ DURUŞ / MOLA BİLDİR (İşsiz)", use_container_width=True):
                         mola_sebebi = st.selectbox("Duruş Sebebi Seçiniz:", ["Mola (Yemek)", "Mola (Çay)", "Toplantı", "Diğer"])
                         if st.button("Duruşa Geç", type="primary"):
@@ -510,7 +539,9 @@ else:
                 else: 
                     st.markdown(f"<div class='kiosk-card' style='border: 3px solid #dc3545;'><div class='kiosk-title' style='color:#dc3545;'>⏸️ DURUŞTA ({ist['break_reason']})</div><div class='kiosk-subtitle'>Süreniz sayılıyor. İş emri bekleniyor...</div></div>", unsafe_allow_html=True)
                     if st.button("▶️ MOLAYI BİTİR (Beklemeye Dön)", type="primary", use_container_width=True):
-                        stop_timers(ist)
+                        if ist["last_break_start"]:
+                            ist["break_time"] += time.time() - ist["last_break_start"]
+                        ist["last_break_start"] = None
                         ist["status"] = "Bekliyor"
                         ist["last_idle_start"] = time.time()
                         ist["break_reason"] = ""
@@ -526,12 +557,25 @@ else:
                         ist["work_time"], ist["break_time"], ist["qc_wait_time"] = sj["work_time"], sj["break_time"], sj["qc_wait_time"]
                         ist["status"] = "Duraklatıldı"
                         ist["suspended_job"] = None
-                        stop_timers(ist) # idle sayacını durdur
+                        stop_timers(ist) 
                         save_db(db)
                         st.rerun()
                 
             elif durum == "Tamamlandı":
                 st.markdown("<div class='kiosk-card' style='border: 3px solid #28a745;'><div class='kiosk-title' style='color:#28a745;'>✅ İŞ BİTTİ</div><div class='kiosk-subtitle'>Yöneticiye bilgi verildi. Yeni görev bekleniyor.</div></div>", unsafe_allow_html=True)
+                
+                if len(ist.get("job_queue", [])) > 0:
+                    st.info(f"📥 Arka planda bekleyen {len(ist['job_queue'])} adet yeni işiniz var.")
+                    if st.button("🚀 SIRADAKİ İŞİ AL VE BAŞLA", type="primary", use_container_width=True):
+                        nj = ist["job_queue"].pop(0)
+                        ist["id"], ist["sn"], ist["target_qty"] = nj["id"], nj["sn"], nj["target_qty"]
+                        ist["current_qty"], ist["step"] = 1, 1
+                        ist["work_time"], ist["break_time"], ist["qc_wait_time"] = 0.0, 0.0, 0.0
+                        ist["status"] = "Onay Bekliyor"
+                        stop_timers(ist)
+                        save_db(db)
+                        st.rerun()
+
                 if ist.get("suspended_job"):
                     if st.button("📌 Askıdaki Eski İşe Geri Dön", use_container_width=True, type="primary"):
                         sj = ist["suspended_job"]
@@ -547,7 +591,7 @@ else:
             elif durum in ["Onay Bekliyor", "Acil Bekliyor"]:
                 st.markdown(f"<div class='kiosk-card' style='border: 3px solid #ffc107;'><div class='kiosk-title'>📦 YENİ GÖREV</div><div class='kiosk-subtitle'>İş Emri: {ist['id']} | Toplam: {ist['target_qty']} Adet</div></div>", unsafe_allow_html=True)
                 if st.button("🚀 GÖREVİ KABUL ET VE BAŞLA", type="primary", use_container_width=True):
-                    stop_timers(ist) # idle sayacını durdur
+                    stop_timers(ist) 
                     ist["status"] = "Çalışıyor"
                     ist["last_work_start"] = time.time()
                     save_db(db)
@@ -579,7 +623,7 @@ else:
                     c1, c2, c3 = st.columns([1, 2, 1])
                     with c2:
                         if step == 3: 
-                            st.error("🔒 KALİTE ONAYI GEREKİYOR")
+                            st.error("🔒 KALİTE ONAYI GEREKİYOR (Kalite birimine bildirim gitti)")
                             qc_pass = st.text_input("Kalite Şifresi:", type="password")
                             if st.button("✔️ ONAYLA VE GEÇ", type="primary", use_container_width=True):
                                 if qc_pass == USERS["kalite1"]["pass"]:
@@ -608,7 +652,7 @@ else:
                         else:
                             stop_timers(ist)
                             ist["status"] = "Tamamlandı"
-                            ist["last_idle_start"] = time.time() # idle başlar
+                            ist["last_idle_start"] = time.time()
                             db["performance"][aktif_rol]["tamamlanan_is_emri"] += 1
                             
                             db["completed_jobs"].append({
@@ -637,7 +681,7 @@ else:
                         if st.button("İşi Aktar", type="primary"):
                             if db["stations"][hedef]["status"] in ["Bekliyor", "Tamamlandı"]:
                                 stop_timers(ist)
-                                stop_timers(db["stations"][hedef]) # hedefin idle timerını durdur
+                                stop_timers(db["stations"][hedef])
                                 db["stations"][hedef] = copy.deepcopy(ist)
                                 db["stations"][hedef]["status"] = "Duraklatıldı"
                                 db["stations"][aktif_rol] = get_empty_station()
