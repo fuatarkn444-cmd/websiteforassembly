@@ -166,7 +166,7 @@ def stop_timers(istasyon_verisi):
 # 5. GİRİŞ EKRANI
 # =====================================================================
 if not st.session_state.logged_in:
-    st.markdown("<br><br><h1 style='text-align: center; font-size: 70px;'>DİJİTAL SİS</h1>", unsafe_allow_html=True)
+    st.markdown("<br><br><h1 style='text-align: center; font-size: 70px;'>DİJİTAL SİSTEM</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         with st.container(border=True):
