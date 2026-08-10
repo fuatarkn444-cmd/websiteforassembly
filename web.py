@@ -12,7 +12,7 @@ import copy
 
 # 1. SAYFA AYARLARI VE TASARIM (CSS)
 # =====================================================================
-st.set_page_config(page_title="Dijital Sis - Kiosk & Dashboard", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Dijital Sistem - Kiosk & Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
